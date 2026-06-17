@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Playground</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e6e6e6; --bg:#ffffff; --stage:#ffffff; --panel:#f7f7f8;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+    --r-card:28px; --r-box:18px; --r-chip:12px; --r-tag:7px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:18px;line-height:1.9;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    overflow-x:hidden;   /* guard against horizontal scroll from rubber-band overshoot */
+  }
+  /* page text is selectable; only the interactive stages opt out (so dragging doesn't select) */
+  #stageArea,#numStageArea{-webkit-user-select:none;user-select:none}
+  .doc{max-width:680px;margin:0 auto;padding:72px 28px 120px}
+
+  h1{font-size:34px;font-weight:700;line-height:1.35;letter-spacing:-.01em;margin-bottom:8px}
+  .sub{font-size:16px;color:var(--ink-dim);margin-bottom:44px;line-height:1.7}
+
+  /* demo stage — matches .demo / .render aesthetic */
+  .stage-card{background:var(--stage);border-radius:var(--r-card);padding:18px 18px 22px;overflow:visible}
+  .cap{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.04em;
+       padding:4px 8px 14px;display:block}
+  #stageArea{position:relative;width:100%;height:clamp(360px,56vh,560px);
+       touch-action:none;border-radius:var(--r-box)}
+
+  /* folder background — the rounded rect that grows/shrinks (BackgroundParams) */
+  #folder{position:absolute;left:0;top:0;background:#ffffff;border-radius:30px;
+       box-shadow:0 2px 6px rgba(0,0,0,.05), 0 14px 34px rgba(0,0,0,.12);will-change:width,height}
+  .icon{position:absolute;left:0;top:0;transform-origin:0 0;border-radius:10px;will-change:transform,opacity}
+  /* alpha is a CSS transition (not a spring); only enabled after the first paint so boot doesn't fade */
+  #stageArea.ready .icon{transition:opacity .2s ease}
+
+  /* center hint, fades after first interaction */
+  #hint{position:absolute;left:50%;top:14%;transform:translateX(-50%);z-index:2;
+       color:var(--ink-dim);font-size:13.5px;font-weight:500;pointer-events:none;
+       transition:opacity .45s;text-align:center;line-height:1.7;width:90%}
+
+  /* control row — mirrors .ad-tabs / .ad-label / .ad-replay */
+  .controls{display:flex;align-items:center;gap:10px;margin-top:14px}
+  .ad-label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);flex:1}
+  .ad-label b{color:var(--ink);font-weight:600}
+  .ad-replay{margin-left:auto;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+       color:var(--ink-soft);background:var(--panel);border:1px solid var(--line);border-radius:50%;cursor:pointer;
+       transition:.15s;flex:0 0 auto}
+  .ad-replay:hover{background:#e6e6e8;color:var(--ink)}
+  .ad-replay:active{transform:rotate(-40deg)}
+  .ad-replay svg{width:16px;height:16px;display:block}
+
+  /* spring slider panel — mirrors .ad-params */
+  .ad-params{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:14px}
+  .ad-pgroup{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.04em;
+       margin:0 0 12px;text-transform:uppercase}
+  .ad-prow{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .ad-prow:last-child{margin-bottom:0}
+  .ad-prow label{font-size:13px;color:var(--ink-soft);flex:0 0 150px}
+  .ad-prow label .k{font-family:var(--mono);color:var(--ink-dim);font-size:12px}
+  .ad-prow input[type=range]{flex:1;accent-color:var(--ink);height:3px;cursor:pointer}
+  .ad-prow .pv{font-family:var(--mono);font-size:12.5px;flex:0 0 56px;text-align:right;color:var(--ink)}
+  @media(max-width:640px){
+    .ad-prow label{flex:0 0 110px;font-size:12px}
+    .ad-prow .pv{flex:0 0 48px;font-size:12px}
+  }
+
+  /* sections */
+  h2{font-size:23px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+  .act-label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);letter-spacing:.05em;margin:60px 0 6px}
+  .act-label.first{margin-top:34px}
+  .demo-sub{font-size:15px;color:var(--ink-dim);margin:0 0 20px;line-height:1.6}
+  .footer{margin-top:72px;padding-top:24px;border-top:1px solid var(--line);
+       font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);line-height:1.8}
+  .footer a{color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+  .footer a:hover{color:var(--ink)}
+
+  /* demo 02 · spring number */
+  #numStageArea{position:relative;display:flex;align-items:center;justify-content:center;height:clamp(140px,22vh,190px)}
+  .num-controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;justify-content:space-between}
+  .num-controls .grp{display:flex;gap:8px}
+  .num-controls input{width:92px;padding:9px 12px;font:14px var(--mono);background:var(--panel);
+       border:1px solid var(--line);border-radius:10px;color:var(--ink);text-align:center;outline:none}
+  .num-controls input:focus{border-color:var(--ink-dim)}
+  .num-controls button{padding:9px 16px;font-size:14px;font-weight:600;background:var(--ink);color:#fff;
+       border:none;border-radius:10px;cursor:pointer;transition:opacity .15s}
+  .num-controls button:hover{opacity:.82}
+  .num-controls button:active{transform:translateY(1px)}
+
+  /* demo 03 · word spring (text reveal) */
+  .ad-tabs{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .ad-tab{font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);background:var(--panel);
+       border:1px solid var(--line);border-radius:9px;padding:7px 12px;cursor:pointer;transition:.15s}
+  .ad-tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .ad-out{font-size:18px;line-height:1.7;color:var(--ink);min-height:120px;white-space:normal;overflow-wrap:break-word}
+  .ad-out .u{display:inline-block;will-change:transform,opacity,filter}
+  .ad-out .sp{display:inline}
+
+  @media(max-width:640px){
+    body{font-size:17px}
+    .doc{padding:48px 18px 90px}
+    h1{font-size:27px}
+    .ad-label{font-size:11px}
+    /* number controls: each input+button pair fills its row */
+    .num-controls{gap:8px}
+    .num-controls .grp{flex:1 1 calc(50% - 4px)}
+    .num-controls input{flex:1;width:auto;min-width:0}
+    .num-controls button{flex:0 0 auto;padding:9px 14px}
+  }
+</style>
+</head>
+<body>
+<article class="doc">
+  <h1>Playground</h1>
+  <p class="sub">Interaction demos.</p>
+
+  <p class="act-label first">DEMO 01</p>
+  <h2>FlexibleFolder</h2>
+  <p class="demo-sub">A folder-resize gesture — drag the bottom-right corner to reshape the grid.</p>
+
+  <div class="stage-card">
+    <span class="cap">DRAG THE BOTTOM-RIGHT CORNER TO RESIZE</span>
+    <div id="stageArea">
+      <div id="folder"></div>
+      <div id="hint">Drag the bottom-right corner to resize<br>← → columns · ↑ ↓ rows</div>
+    </div>
+    <div class="controls">
+      <span class="ad-label" id="info">3 × 3</span>
+      <button class="ad-replay" id="reset" title="Reset to 3×3" aria-label="Reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="ad-params">
+    <div class="ad-pgroup">SPRING · CPU-integrated, 4ms steps</div>
+    <div class="ad-prow">
+      <label>Stiffness <span class="k">k</span></label>
+      <input id="sK" type="range" min="80" max="1200" step="10" value="520">
+      <span class="pv" id="vK">520</span>
+    </div>
+    <div class="ad-prow">
+      <label>Damping ratio <span class="k">ζ</span></label>
+      <input id="sZ" type="range" min="0.30" max="1.30" step="0.02" value="1.00">
+      <span class="pv" id="vZ">1.00</span>
+    </div>
+  </div>
+
+  <p class="act-label">DEMO 02</p>
+  <h2>Spring Number</h2>
+  <p class="demo-sub">Each digit rolls on its own spring — motion blur scales with velocity, and it fades on change.</p>
+
+  <div class="stage-card">
+    <span class="cap">SPRING NUMBER · 0 – 9999</span>
+    <div id="numStageArea"><div id="numDisplay"></div></div>
+  </div>
+
+  <div class="ad-params">
+    <div class="ad-prow">
+      <label>Scrub</label>
+      <input id="numSlider" type="range" min="0" max="9999" value="1234" aria-label="Scrub value">
+      <span class="pv" id="numInfo">1234</span>
+    </div>
+  </div>
+
+  <div class="num-controls">
+    <div class="grp"><input id="numJump" type="number" min="0" max="9999" value="8888" aria-label="Count-to value"><button id="numJumpBtn">Count to</button></div>
+    <div class="grp"><input id="numSet"  type="number" min="0" max="9999" value="42" aria-label="Jump-to value"><button id="numSetBtn">Jump to</button></div>
+    <div class="grp"><input id="numAdd"  type="number" min="0" max="9999" value="100" aria-label="Add amount"><button id="numAddBtn">+ Add</button></div>
+  </div>
+
+  <p class="act-label">DEMO 03</p>
+  <h2>Word Spring</h2>
+  <p class="demo-sub">A word-by-word text reveal — inspired by iOS.</p>
+
+  <div class="stage-card">
+    <div class="ad-tabs">
+      <span class="ad-label">Apple Default · Word Spring</span>
+      <button class="ad-replay" id="appleReplay" aria-label="Replay">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+    <div class="ad-out" id="ad-apple-out"></div>
+  </div>
+
+  <div class="ad-params">
+    <div class="ad-pgroup">Spring Timing</div>
+    <div class="ad-prow"><label>Word Delay</label><input type="range" id="pp-wd" min="0" max="6" step="0.1" value="1.1"><span class="pv" id="ppv-wd">1.1ms</span></div>
+    <div class="ad-prow"><label>Line Delay</label><input type="range" id="pp-ld" min="0" max="30" value="5"><span class="pv" id="ppv-ld">5.0ms</span></div>
+    <div class="ad-prow"><label>Y Offset %</label><input type="range" id="pp-yo" min="0" max="0.6" step="0.01" value="0.35"><span class="pv" id="ppv-yo">0.35</span></div>
+    <div class="ad-pgroup">Offset Spring</div>
+    <div class="ad-prow"><label>Response</label><input type="range" id="pp-r" min="0.1" max="1.2" step="0.01" value="0.40"><span class="pv" id="ppv-r">0.40</span></div>
+    <div class="ad-prow"><label>Damping</label><input type="range" id="pp-d" min="0.3" max="1.0" step="0.01" value="0.65"><span class="pv" id="ppv-d">0.65</span></div>
+    <div class="ad-pgroup">Opacity / Effects</div>
+    <div class="ad-prow"><label>Reveal End</label><input type="range" id="pp-re" min="0.3" max="1.0" step="0.01" value="0.70"><span class="pv" id="ppv-re">0.70</span></div>
+    <div class="ad-prow"><label>Blur</label><input type="range" id="pp-bl" min="0" max="10" value="4"><span class="pv" id="ppv-bl">4px</span></div>
+    <div class="ad-prow"><label>Chromatic</label><input type="range" id="pp-ab" min="0" max="1.5" step="0.01" value="0.85"><span class="pv" id="ppv-ab">0.85</span></div>
+    <div class="ad-pgroup">Line Intensity</div>
+    <div class="ad-prow"><label>Line 1</label><input type="range" id="pp-l0" min="0" max="1" step="0.05" value="1.0"><span class="pv" id="ppv-l0">1.00</span></div>
+    <div class="ad-prow"><label>Line 2</label><input type="range" id="pp-l1" min="0" max="1" step="0.05" value="0.8"><span class="pv" id="ppv-l1">0.80</span></div>
+    <div class="ad-prow"><label>Line 3</label><input type="range" id="pp-l2" min="0" max="1" step="0.05" value="0.6"><span class="pv" id="ppv-l2">0.60</span></div>
+    <div class="ad-prow"><label>Line 4</label><input type="range" id="pp-l3" min="0" max="1" step="0.05" value="0.45"><span class="pv" id="ppv-l3">0.45</span></div>
+    <div class="ad-prow"><label>Line 5+</label><input type="range" id="pp-l4" min="0" max="1" step="0.05" value="0.2"><span class="pv" id="ppv-l4">0.20</span></div>
+  </div>
+
+  <div class="footer">Inspired by <a href="https://x.com/_chenglou" target="_blank" rel="noopener">@_chenglou</a></div>
+
+</article>
+
+<script>
+'use strict'
+// =============================================================================
+// FlexibleFolder — single-file web port of FlexibleFolder.kt.
+//
+// Render architecture follows chenglou's draggable-cards pattern:
+//   • scheduleRender(): render-on-demand, keeps going only while animating
+//   • fixed 4ms spring steps, decoupled from framerate
+//   • render() = animation steps → batched DOM writes
+//
+// FlexibleFolder logic ported 1:1 from the Android View:
+//   • drag the bottom-right corner region to resize
+//   • direction-aware layout switching across 1×1 1×3 3×1 3×3 4×3 6×3
+//   • overflow icons shrink into a 2×2 mini-grid in the last cell
+//   • InfinityStretch gap stretch while dragging within a layout
+//   • rubber-band damped overstretch at max size
+//   • base + offset springs (the MultiPropertyFactory base/offset split)
+//   • critically-damped springs (SpringForce dampingRatio 1.0 → b = 2√k)
+// =============================================================================
+
+// === generic scheduler ======================================================
+let scheduledRender = false
+function scheduleRender() {
+  if (scheduledRender) return
+  scheduledRender = true
+  requestAnimationFrame(function renderAndMaybeScheduleAnotherRender(now) {
+    scheduledRender = false
+    if (render(now)) scheduleRender()
+  })
+}
+
+// === generic spring physics (4ms/step, mass = 1) =============================
+const msPerAnimationStep = 4
+function spring(pos, k = 500, b = 45) { return { pos, dest: pos, v: 0, k, b } } // critical: b = 2√k
+function springStep(s) {
+  const t = msPerAnimationStep / 1000
+  const a = -s.k * (s.pos - s.dest) - s.b * s.v
+  s.v += a * t
+  s.pos += s.v * t
+}
+function springGoToEnd(s) { s.pos = s.dest; s.v = 0 }
+function springTo(s, dest) { s.dest = dest }
+function springSnap(s, pos) { s.pos = pos; s.dest = pos; s.v = 0 }
+
+// stiffness presets (Android SpringForce → k, critically damped b = 2√k)
+const K_POS = 550, B_POS = 2 * Math.sqrt(550)
+const K_SCL = 500, B_SCL = 2 * Math.sqrt(500)
+const K_OFF = 500, B_OFF = 2 * Math.sqrt(500)
+const K_BG  = 500, B_BG  = 2 * Math.sqrt(500)
+
+// === helpers =================================================================
+function clampRange(v, lo, hi) { return Math.max(lo, Math.min(v, hi)) }
+
+// === InfinityStretch.distance() — overscroll math, ported verbatim ===========
+const STRETCH_COEFF = 1.0
+function stretchDistance(offset, range) {
+  if (offset < 0 || range <= 0) return 0
+  const clamped = Math.min(offset, range - 1e-5)
+  return (range * clamped / (range - clamped)) / STRETCH_COEFF
+}
+
+// === config (dp from activity_main.xml) ======================================
+const DP = { icon: 40, gap: 10, pad: 10, bgRadius: 36, iconRadius: 10 }
+const MAX_COLS = 6, MAX_ROWS = 3
+const LAYOUTS = [[1,1],[1,3],[3,1],[3,3],[4,3],[6,3]]   // [cols, rows]
+const DEFAULT_INDEX = 3                                  // 3×3
+const ICON_COUNT = 23
+
+const ICON_STATE = { VISIBLE: 0, INVISIBLE: 1, ANIMATING: 2 }
+
+// === DOM ====================================================================
+const stageArea = document.getElementById('stageArea')
+const folderEl = document.getElementById('folder')
+const infoEl = document.getElementById('info')
+const hintEl = document.getElementById('hint')
+
+// === state ===================================================================
+let S = 1, U = {}                       // dp→px scale & computed px units
+const org = { x: spring(0, K_POS, B_POS), y: spring(0, K_POS, B_POS) }  // folder top-left, springs to keep each layout centered
+let animatedUntilTime = null
+const grid = { x: LAYOUTS[DEFAULT_INDEX][0], y: LAYOUTS[DEFAULT_INDEX][1] }
+let layoutIndex = DEFAULT_INDEX
+const drag = { active: false, downX: 0, downY: 0 }
+const data = []
+
+// Apple system colors (iOS light) — flat, no stroke. Family of the macOS traffic-lights.
+const APPLE_COLORS = [
+  '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#00C7BE', '#30B0C7',
+  '#32ADE6', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E',
+]
+
+// each icon: base springs (bx,by) + offset springs (ox,oy) + scale + alpha.
+// rendered position = base.pos + offset.pos  (base = settled cell, offset = live drag)
+function buildIcons() {
+  data.length = 0
+  for (let i = 0; i < ICON_COUNT; i++) {
+    const node = document.createElement('div')
+    node.className = 'icon'
+    node.style.background = APPLE_COLORS[i % APPLE_COLORS.length]   // flat Apple color, no stroke
+    stageArea.appendChild(node)
+    data.push({
+      id: i, node,
+      bx: spring(0, K_POS, B_POS), by: spring(0, K_POS, B_POS),
+      ox: spring(0, K_OFF, B_OFF), oy: spring(0, K_OFF, B_OFF),
+      scale: spring(1, K_SCL, B_SCL),
+      index: i, cellX: 0, cellY: 0,
+      state: ICON_STATE.VISIBLE, nextVisible: ICON_STATE.VISIBLE,
+    })
+  }
+}
+
+// background (BackgroundParams): base size springs + size-offset springs
+const bg = {
+  w: spring(0, K_BG, B_BG), h: spring(0, K_BG, B_BG),
+  ox: spring(0, K_OFF, B_OFF), oy: spring(0, K_OFF, B_OFF),
+}
+
+function springForEach(f) {
+  for (const d of data) { f(d.bx); f(d.by); f(d.ox); f(d.oy); f(d.scale) }
+  f(bg.w); f(bg.h); f(bg.ox); f(bg.oy); f(org.x); f(org.y)
+}
+
+// apply spring slider values (stiffness k, damping ratio ζ → b = 2ζ√k) to all motion springs
+function applySpring(k, ze) {
+  const b = 2 * ze * Math.sqrt(k)
+  for (const it of data) for (const s of [it.bx, it.by, it.ox, it.oy, it.scale]) { s.k = k; s.b = b }
+  for (const s of [bg.w, bg.h, bg.ox, bg.oy, org.x, org.y]) { s.k = k; s.b = b }
+}
+
+// === geometry (ported from FlexibleFolder.kt) ================================
+function gridSize(cols, rows) { return { w: U.icon * cols + U.gap * cols, h: U.icon * rows + U.gap * rows } }
+function folderSize(cols, rows) { const g = gridSize(cols, rows); return { w: g.w + U.pad * 2, h: g.h + U.pad * 2 } }
+function smallIconSize() { return (U.icon - U.gap / 2) / 2 }
+function smallGap() { return U.gap / 2 }
+function isSmallIcon(idx, cols, rows) { const gc = cols * rows; return idx >= gc - 1 && idx <= gc + 2 }
+function iconScaleFor(idx, cols, rows) { return isSmallIcon(idx, cols, rows) ? smallIconSize() / U.icon : 1 }
+function iconPosition(it, cols, rows, gapX, gapY) {       // calculateIconPosition
+  const gc = cols * rows
+  const baseX = U.pad + gapX / 2 + it.cellX * U.icon + it.cellX * gapX
+  const baseY = U.pad + gapY / 2 + it.cellY * U.icon + it.cellY * gapY
+  if (isSmallIcon(it.index, cols, rows)) {
+    const si = it.index - gc + 1
+    const scx = si % 2, scy = (si / 2) | 0
+    const ss = smallIconSize(), sg = smallGap()
+    return { x: baseX + scx * ss + scx * sg, y: baseY + scy * ss + scy * sg }
+  }
+  return { x: baseX, y: baseY }
+}
+function arrangeIcons(cols, rows) {                       // arrangeIcons
+  const gc = cols * rows
+  data.forEach((it, index) => {
+    let finalIndex
+    if (index >= gc + 3) { it.nextVisible = ICON_STATE.INVISIBLE; finalIndex = gc - 1 }
+    else { it.state = ICON_STATE.VISIBLE; it.nextVisible = ICON_STATE.VISIBLE; finalIndex = index >= gc - 1 ? gc - 1 : index }
+    it.cellX = finalIndex % cols; it.cellY = (finalIndex / cols) | 0; it.index = index
+  })
+}
+function layoutIcons(animate) {                           // layoutIcons
+  for (const it of data) {
+    const p = iconPosition(it, grid.x, grid.y, U.gap, U.gap)
+    const vis = it.nextVisible === ICON_STATE.VISIBLE
+    const destScale = vis ? iconScaleFor(it.index, grid.x, grid.y) : 1
+    it.node.style.opacity = vis ? 1 : 0             // alpha = CSS transition, not a spring
+    if (animate) {
+      springTo(it.bx, p.x); springTo(it.by, p.y)
+      springTo(it.scale, destScale)
+      springTo(it.ox, 0); springTo(it.oy, 0)          // commitDraggingOffsets → spring back to 0
+      it.state = ICON_STATE.ANIMATING
+    } else {
+      springSnap(it.bx, p.x); springSnap(it.by, p.y)
+      springSnap(it.scale, destScale)
+      springSnap(it.ox, 0); springSnap(it.oy, 0)
+      it.state = it.nextVisible
+    }
+  }
+}
+function layoutBackground(animate) {                      // layoutBackground
+  const f = folderSize(grid.x, grid.y)
+  if (animate) { springTo(bg.w, f.w); springTo(bg.h, f.h); springTo(bg.ox, 0); springTo(bg.oy, 0) }
+  else { springSnap(bg.w, f.w); springSnap(bg.h, f.h); springSnap(bg.ox, 0); springSnap(bg.oy, 0) }
+}
+
+// === drag stretch within a layout (updateDraggingIconParams) =================
+function maxGapSize(cols, rows) {
+  const mf = folderSize(MAX_COLS, MAX_ROWS)
+  return { x: (mf.w - U.pad * 2 - U.icon * cols) / cols, y: (mf.h - U.pad * 2 - U.icon * rows) / rows }
+}
+function updateDragStretch(diffX, diffY) {
+  const cols = grid.x, rows = grid.y
+  const mg = maxGapSize(cols, rows)
+  let gx = U.gap + Math.sign(diffX) * stretchDistance(Math.abs(diffX) / (cols * 5), Math.abs(diffX))
+  let gy = U.gap + Math.sign(diffY) * stretchDistance(Math.abs(diffY) / (rows * 5), Math.abs(diffY))
+  const atMax = cols >= MAX_COLS && rows >= MAX_ROWS
+  if (atMax && gx > mg.x) gx = mg.x + (gx - mg.x) * 0.5; else gx = clampRange(gx, 0, mg.x)   // rubber band X
+  if (atMax && gy > mg.y) gy = mg.y + (gy - mg.y) * 0.3; else gy = clampRange(gy, 0, mg.y)   // rubber band Y
+  const stretchX = (gx - U.gap) * cols, stretchY = (gy - U.gap) * rows
+  for (const it of data) {
+    const oldP = iconPosition(it, cols, rows, U.gap, U.gap)
+    const newP = iconPosition(it, cols, rows, gx, gy)
+    springSnap(it.ox, newP.x - oldP.x)    // live offset — no spring lag while dragging
+    springSnap(it.oy, newP.y - oldP.y)
+  }
+  springSnap(bg.ox, stretchX); springSnap(bg.oy, stretchY)
+}
+
+// === layout switching (findLayoutWith… ported verbatim) ======================
+function minBy(arr, score) { let best = null, bs = Infinity; for (const a of arr) { const s = score(a); if (s < bs) { bs = s; best = a } } return best }
+function moreColumns(c){ return minBy(LAYOUTS.filter(l=>l[0]>c.x), l=>Math.abs(l[1]-c.y)*100 + l[0]) }
+function lessColumns(c){ return minBy(LAYOUTS.filter(l=>l[0]<c.x), l=>Math.abs(l[1]-c.y)*100 + (10-l[0])) }
+function moreRows(c)   { return minBy(LAYOUTS.filter(l=>l[1]>c.y), l=>Math.abs(l[0]-c.x)*100 + l[1]) }
+function lessRows(c)   { return minBy(LAYOUTS.filter(l=>l[1]<c.y), l=>Math.abs(l[0]-c.x)*100 + (10-l[1])) }
+function applyLayout(l) {
+  grid.x = l[0]; grid.y = l[1]
+  layoutIndex = LAYOUTS.findIndex(a => a[0] === l[0] && a[1] === l[1])
+  if (navigator.vibrate) navigator.vibrate(8)        // CLOCK_TICK haptic
+  arrangeIcons(grid.x, grid.y)
+  layoutIcons(true)
+  layoutBackground(true)
+  recomputeOrigin(true)                              // re-center the new layout
+}
+
+// === hit testing — the bottom-right corner area is the resize grab region =====
+function grabRect() {
+  const bw = bg.w.pos + bg.ox.pos, bh = bg.h.pos + bg.oy.pos
+  const s = U.icon + U.pad                   // corner grab region size
+  return { x: org.x.pos + bw - s, y: org.y.pos + bh - s, w: s, h: s }
+}
+function inRect(q, lx, ly) { return lx >= q.x && lx <= q.x + q.w && ly >= q.y && ly <= q.y + q.h }
+
+// === input ===================================================================
+// down starts the drag only if it lands in the bottom-right corner grab region
+stageArea.addEventListener('pointerdown', e => {
+  const r = stageArea.getBoundingClientRect()
+  const lx = e.clientX - r.left, ly = e.clientY - r.top
+  if (inRect(grabRect(), lx, ly)) {
+    drag.active = true; drag.downX = e.clientX; drag.downY = e.clientY
+    try { stageArea.setPointerCapture(e.pointerId) } catch (_) {}
+    stageArea.style.cursor = 'grabbing'
+    hintEl.style.opacity = 0
+    scheduleRender()
+  }
+})
+
+// move/up/cancel live on WINDOW so a release anywhere ends the drag — fixes the
+// "it keeps doing last drag without me touching it" bug (missed pointerup).
+window.addEventListener('pointermove', e => {
+  if (!drag.active) return
+  if (e.buttons === 0) { endDrag(); return }      // safety: button already released → never got the up
+  const diffX = e.clientX - drag.downX, diffY = e.clientY - drag.downY   // deltas: space-invariant
+  const threshold = U.icon + U.gap
+  let newLayout = null
+  if      (diffX >  threshold) newLayout = moreColumns(grid)
+  else if (diffX < -threshold) newLayout = lessColumns(grid)
+  else if (diffY >  threshold) newLayout = moreRows(grid)
+  else if (diffY < -threshold) newLayout = lessRows(grid)
+  if (newLayout) { applyLayout(newLayout); drag.downX = e.clientX; drag.downY = e.clientY }
+  else updateDragStretch(diffX, diffY)
+  scheduleRender()
+})
+function endDrag() {
+  if (!drag.active) return
+  drag.active = false
+  stageArea.style.cursor = ''
+  layoutIcons(true); layoutBackground(true)        // settle + commit offsets
+  scheduleRender()
+}
+window.addEventListener('pointerup', endDrag)
+window.addEventListener('pointercancel', endDrag)
+window.addEventListener('blur', endDrag)           // lost focus mid-drag → end cleanly
+window.addEventListener('resize', () => { recomputeUnits(); recomputeOrigin(false); applySizesToDom(); layoutIcons(false); layoutBackground(false); scheduleRender() })
+
+document.getElementById('reset').addEventListener('click', () => {
+  layoutIndex = DEFAULT_INDEX; grid.x = LAYOUTS[DEFAULT_INDEX][0]; grid.y = LAYOUTS[DEFAULT_INDEX][1]
+  arrangeIcons(grid.x, grid.y); layoutIcons(true); layoutBackground(true); recomputeOrigin(true); scheduleRender()
+})
+
+// hover affordance — grab cursor over the bottom-right corner region
+stageArea.addEventListener('pointermove', e => {
+  if (drag.active) return
+  const r = stageArea.getBoundingClientRect()
+  stageArea.style.cursor = inRect(grabRect(), e.clientX - r.left, e.clientY - r.top) ? 'grab' : 'default'
+})
+
+// === spring sliders ==========================================================
+const sK = document.getElementById('sK'), sZ = document.getElementById('sZ')
+const vK = document.getElementById('vK'), vZ = document.getElementById('vZ')
+function onSpringInput() {
+  const k = +sK.value, ze = +sZ.value
+  vK.textContent = k; vZ.textContent = ze.toFixed(2)
+  applySpring(k, ze)
+  scheduleRender()
+}
+sK.addEventListener('input', onSpringInput)
+sZ.addEventListener('input', onSpringInput)
+
+// === layout metrics ==========================================================
+function recomputeUnits() {
+  const aw = stageArea.clientWidth, ah = stageArea.clientHeight
+  const maxDpW = DP.pad * 2 + DP.icon * MAX_COLS + DP.gap * MAX_COLS
+  const maxDpH = DP.pad * 2 + DP.icon * MAX_ROWS + DP.gap * MAX_ROWS
+  const M = aw < 420 ? 18 : 48    // less breathing room on small screens so the 6×3 folder still fits
+  S = clampRange(Math.min((aw - 2 * M) / maxDpW, (ah - 2 * M) / maxDpH), 0.55, 2.2)
+  U = { icon: DP.icon * S, gap: DP.gap * S, pad: DP.pad * S, bgRadius: DP.bgRadius * S, iconRadius: DP.iconRadius * S }
+}
+// center the CURRENT settled layout in the stage; springs animate the re-center on
+// layout change. Target stays fixed during a within-layout stretch → drag-stable.
+function recomputeOrigin(animate) {
+  const aw = stageArea.clientWidth, ah = stageArea.clientHeight
+  const f = folderSize(grid.x, grid.y)
+  const cx = Math.round((aw - f.w) / 2), cy = Math.round((ah - f.h) / 2)
+  if (animate) { springTo(org.x, cx); springTo(org.y, cy) }
+  else { springSnap(org.x, cx); springSnap(org.y, cy) }
+}
+function applySizesToDom() {
+  for (const it of data) {
+    it.node.style.width = U.icon + 'px'; it.node.style.height = U.icon + 'px'
+    it.node.style.borderRadius = U.iconRadius + 'px'
+  }
+}
+
+// === render ==================================================================
+function render(now) {
+  // --- fixed-timestep spring steps, decoupled from framerate
+  let newAnimatedUntilTime = animatedUntilTime ?? now
+  const steps = Math.floor((now - newAnimatedUntilTime) / msPerAnimationStep)
+  newAnimatedUntilTime += steps * msPerAnimationStep
+  let stillAnimating = false
+  springForEach(s => {
+    for (let i = 0; i < steps; i++) springStep(s)
+    if (Math.abs(s.v) < 0.01 && Math.abs(s.dest - s.pos) < 0.01) springGoToEnd(s)
+    else stillAnimating = true
+  })
+  if (drag.active) stillAnimating = true
+
+  // --- batched DOM writes
+  const ox = org.x.pos, oy = org.y.pos
+  const bw = bg.w.pos + bg.ox.pos, bh = bg.h.pos + bg.oy.pos
+  folderEl.style.transform = `translate3d(${ox}px,${oy}px,0)`
+  folderEl.style.width = bw + 'px'; folderEl.style.height = bh + 'px'
+  // radius adapts to size: capped for wide layouts, half-the-shorter-side → pill when narrow/small
+  folderEl.style.borderRadius = Math.min(Math.min(bw, bh) / 2, U.bgRadius) + 'px'
+
+  for (const it of data) {
+    const x = ox + it.bx.pos + it.ox.pos
+    const y = oy + it.by.pos + it.oy.pos
+    const st = it.node.style
+    st.transform = `translate3d(${x}px,${y}px,0) scale(${it.scale.pos})`
+    st.zIndex = data.length - it.index
+  }
+
+  const visible = data.filter(it => it.nextVisible !== ICON_STATE.INVISIBLE).length
+  infoEl.innerHTML = `<b>${grid.x} × ${grid.y}</b> grid · ${(bw / S).toFixed(0)} × ${(bh / S).toFixed(0)} dp · ${visible} icons`
+
+  animatedUntilTime = stillAnimating ? newAnimatedUntilTime : null
+  return stillAnimating
+}
+
+// === boot ====================================================================
+buildIcons()
+recomputeUnits()
+applySizesToDom()
+arrangeIcons(grid.x, grid.y)
+layoutIcons(false)
+layoutBackground(false)
+recomputeOrigin(false)
+onSpringInput()          // sync springs to the slider defaults
+render(performance.now())  // paint the settled state synchronously — no entrance flash/animation
+requestAnimationFrame(() => stageArea.classList.add('ready'))  // enable opacity transitions only after first paint
+</script>
+
+<script src="spring-number.js"></script>
+<script>
+'use strict'
+// =============================================================================
+// DEMO 02 — Spring Number controls (uses the reusable SpringNumber class).
+//   • Scrub  → setValue (instant; each digit springs into place)
+//   • Count to → animateTo (eased tween that counts through the values)
+//   • Jump to  → setValue (instant)
+//   • + Add    → animateTo(current + delta)
+// =============================================================================
+;(function () {
+  const num = new SpringNumber('#numDisplay', { value: 1234, color: '#1a1a1a' })
+  const MIN = 0, MAX = 9999
+
+  const sliderEl = document.getElementById('numSlider')
+  const infoEl = document.getElementById('numInfo')
+  const clamp = v => { const n = Number(v); return Number.isFinite(n) ? Math.max(MIN, Math.min(MAX, Math.round(n))) : null }
+
+  // inputs that mirror the absolute value; the +Add delta field is NOT mirrored
+  const mirrors = []
+  const bind = (input, button, handler, mirror = true) => {
+    const run = () => handler(clamp(input.value))
+    button.addEventListener('click', run)
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') run() })
+    if (mirror) mirrors.push(input)
+  }
+  const syncUI = v => { sliderEl.value = v; infoEl.textContent = v; for (const m of mirrors) m.value = v }
+
+  let tweenRaf = null
+  const cancelTween = () => { if (tweenRaf !== null) { cancelAnimationFrame(tweenRaf); tweenRaf = null } }
+
+  const scrub = v => { cancelTween(); if (v === null) return; num.setValue(v, true); syncUI(v) }   // instant roll
+  const jump  = v => { cancelTween(); if (v === null) return; num.setValue(v); syncUI(v) }          // fade reveal
+  const animateTo = v => {
+    cancelTween(); if (v === null) return
+    const start = num.getValue(); if (start === v) return
+    const dur = 600, ease = t => 1 - Math.pow(1 - t, 3), t0 = performance.now()
+    const step = now => {
+      const t = Math.min((now - t0) / dur, 1)
+      const cur = Math.round(start + (v - start) * ease(t))
+      num.setValue(cur, true); syncUI(cur)          // instant per step → smooth count
+      tweenRaf = t < 1 ? requestAnimationFrame(step) : null
+    }
+    tweenRaf = requestAnimationFrame(step)
+  }
+
+  sliderEl.addEventListener('input', e => scrub(clamp(e.target.value)))
+  bind(document.getElementById('numJump'), document.getElementById('numJumpBtn'), animateTo)   // Count to
+  bind(document.getElementById('numSet'),  document.getElementById('numSetBtn'),  jump)        // Jump to (fade)
+  bind(document.getElementById('numAdd'),  document.getElementById('numAddBtn'),  v => animateTo(clamp(num.getValue() + (v ?? 0))), false)
+
+  syncUI(1234)
+})()
+</script>
+
+<script>
+'use strict'
+// =============================================================================
+// DEMO 03 — Word Spring: Apple's default generative-UI text reveal, 1:1 values.
+//   words spring up one by one (word delay + line delay), opacity reaches early
+//   (revealEnd), motion blur + chromatic aberration fade with progress, and each
+//   line is dimmer than the last so long paragraphs stay calm.
+//   Scoped in an IIFE so Spring/loop/APPLE don't touch the other demos' globals.
+// =============================================================================
+;(function () {
+  const MS = 4
+  class Spring {
+    constructor(v, cfg) { this.value = v; this.target = v; this.velocity = 0; this.cfg = cfg; this.leftover = 0 }
+    setTarget(t) { this.target = t }
+    step(dt) {
+      const { stiffness: k, damping: b, mass: m, precision } = this.cfg
+      let acc = dt + this.leftover
+      while (acc >= MS) { const h = MS / 1000; const a = (-k * (this.value - this.target) - b * this.velocity) / m; this.velocity += a * h; this.value += this.velocity * h; acc -= MS }
+      this.leftover = acc
+      if (Math.abs(this.velocity) < precision && Math.abs(this.value - this.target) < precision) { this.value = this.target; this.velocity = 0; return false }
+      return true
+    }
+  }
+  function loop(fn) {
+    let last = performance.now()
+    function f(now) { const dt = Math.min(now - last, 64); last = now; if (fn(dt, now)) requestAnimationFrame(f) }
+    requestAnimationFrame(f)
+  }
+
+  // Apple real values — response 0.40 / damping 0.65 → k=(2π/0.4)²≈247, b=2·0.65·√k≈20.4
+  const APPLE = { k: 247, b: 20.4, wordDelay: 11, lineDelay: 50, yoffPct: 0.35, revealEnd: 0.70, blur: 4, abStart: 0.85 }
+  const APPLE_LINE = [1.0, 0.8, 0.6, 0.45, 0.2]   // per-line brightness, decreasing
+  const TXT = "The Hayflick limit is the maximum number of times a normal human cell can divide, typically around 40 to 60 times, before cell division stops permanently. It happens because telomeres — the protective caps at the ends of chromosomes — get shorter with each division, eventually triggering senescence. Discovered by Leonard Hayflick in 1961, it overturned the long-held belief that cells could divide forever."
+  const el = document.getElementById('ad-apple-out')
+
+  function play() {
+    el.innerHTML = ''
+    const words = TXT.split(/(\s+)/)                 // keep whitespace as its own token
+    const fontPx = 18, yoff = fontPx * APPLE.yoffPct
+    const tcfg = { stiffness: APPLE.k, damping: APPLE.b, mass: 1, precision: 0.01 }
+    let wi = 0
+    const items = []
+    words.forEach(w => {
+      if (/^\s+$/.test(w)) { const sp = document.createElement('span'); sp.className = 'sp'; sp.textContent = w; el.appendChild(sp); return }
+      if (w === '') return
+      const s = document.createElement('span'); s.className = 'u'; s.textContent = w
+      s.style.opacity = '0'; s.style.filter = `blur(${APPLE.blur}px)`; el.appendChild(s)
+      items.push({ s, i: wi++, sp: new Spring(yoff, tcfg), st: false, line: 0 })
+    })
+    // measure line numbers from offsetTop after layout
+    requestAnimationFrame(() => {
+      const lineTops = []
+      items.forEach(it => { const t = it.s.offsetTop; if (!lineTops.includes(t)) lineTops.push(t) })
+      lineTops.sort((a, b) => a - b)
+      items.forEach(it => { it.line = lineTops.indexOf(it.s.offsetTop) })
+      const t0 = performance.now() + 220
+      loop((dt, now) => {
+        let alive = false
+        for (const it of items) {
+          const at = t0 + it.i * APPLE.wordDelay + it.line * APPLE.lineDelay
+          if (now < at) { alive = true; continue }
+          if (!it.st) { it.st = true; it.sp.setTarget(0) }
+          const a = it.sp.step(dt), y = it.sp.value
+          it.s.style.transform = `translateY(${y.toFixed(2)}px)`
+          const prog = 1 - Math.min(1, Math.abs(y) / Math.max(yoff, 0.5))
+          const lineMax = APPLE_LINE[Math.min(it.line, APPLE_LINE.length - 1)]
+          it.s.style.opacity = (Math.min(1, prog / APPLE.revealEnd) * lineMax).toFixed(3)
+          const b = APPLE.blur * (1 - prog); it.s.style.filter = b > 0.05 ? `blur(${b.toFixed(2)}px)` : 'none'
+          const av = APPLE.abStart * 8 * (1 - prog)
+          it.s.style.textShadow = av > 0.1 ? `${(-av).toFixed(2)}px 0 rgba(255,40,40,.7),${av.toFixed(2)}px 0 rgba(0,200,255,.7)` : 'none'
+          if (a) alive = true
+          else { it.s.style.transform = 'none'; it.s.style.filter = 'none'; it.s.style.textShadow = 'none'; it.s.style.opacity = lineMax.toFixed(3) }
+        }
+        return alive
+      })
+    })
+  }
+
+  // debug sliders — Apple's tunable params; tweaking any one replays the reveal
+  function ppBind(id, unit, apply) {
+    const i = document.getElementById('pp-' + id), v = document.getElementById('ppv-' + id)
+    const u = () => { apply(+i.value); v.textContent = (+i.value).toFixed(unit === 'ms' ? 1 : 2) + (unit === 'ms' ? 'ms' : unit === 'px' ? 'px' : '') }
+    i.addEventListener('input', () => { u(); play() })
+    u()   // init: apply default value, no replay yet
+  }
+  ppBind('wd', 'ms', x => APPLE.wordDelay = x * 10)   // shown in real ms, ×10 internally so it's visible
+  ppBind('ld', 'ms', x => APPLE.lineDelay = x * 10)
+  ppBind('yo', '',  x => APPLE.yoffPct = x)
+  ppBind('r',  '',  x => { APPLE.k = Math.pow(2 * Math.PI / x, 2) })   // response → stiffness
+  ppBind('d',  '',  x => { APPLE.b = 2 * x * Math.sqrt(APPLE.k) })     // damping ratio → b (uses current k)
+  ppBind('re', '',  x => APPLE.revealEnd = x)
+  ppBind('bl', 'px', x => APPLE.blur = x)
+  ppBind('ab', '',  x => APPLE.abStart = x)
+  ;[0, 1, 2, 3, 4].forEach(j => ppBind('l' + j, '', x => APPLE_LINE[j] = x))
+
+  document.getElementById('appleReplay').addEventListener('click', play)
+  play()
+})()
+</script>
+</body>
+</html>
