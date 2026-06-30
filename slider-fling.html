@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Topics · Fling</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #000;
+      --tick: #fff;
+      --pill: #fff;
+      --text: #fff;
+      --text-2: rgba(255,255,255,0.62);
+      --hairline: rgba(255,255,255,0.12);
+      --card-bg: rgba(118,118,128,0.24);
+      --card-shadow: 0 20px 48px rgba(0,0,0,0.45);
+      --card-radius: 28px;
+      --sans: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --tick-x: 9%;
+    }
+    body.light {
+      --bg: #f2f2f7;
+      --tick: #1c1c1e;
+      --pill: #1c1c1e;
+      --text: #1c1c1e;
+      --text-2: rgba(0,0,0,0.55);
+      --hairline: rgba(0,0,0,0.12);
+      --card-bg: rgba(255,255,255,0.72);
+      --card-shadow: 0 18px 44px rgba(0,0,0,0.16);
+    }
+    .theme-toggle {
+      position: fixed;
+      top: max(16px, env(safe-area-inset-top)); right: 16px;
+      width: 40px; height: 40px;
+      border: none; border-radius: 50%;
+      background: var(--card-bg);
+      -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+      color: var(--text); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 10; padding: 0; -webkit-tap-highlight-color: transparent;
+      transition: background-color 400ms ease, color 400ms ease;
+    }
+
+    html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+    body { font-family: var(--sans); background: var(--bg); transition: background-color 400ms ease; }
+
+    .slider {
+      position: fixed; inset: 0;
+      touch-action: none;
+      -webkit-user-select: none; user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      cursor: grab;
+    }
+    .slider:active { cursor: grabbing; }
+
+    /* 滚动标尺：上下边缘淡出 */
+    .track {
+      position: fixed; inset: 0; overflow: hidden;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+              mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+    }
+
+    .tick {
+      position: absolute;
+      left: var(--tick-x);
+      top: 0;
+      width: 22px;
+      height: 2px;
+      background: var(--tick);
+      border-radius: 1px;
+      transform-origin: left center;
+    }
+
+    .card-wrap { position: fixed; inset: 0; pointer-events: none; }
+
+    .card {
+      position: fixed;
+      overflow: hidden;
+      background: var(--pill);
+      transition: background-color 400ms ease, box-shadow 400ms ease;
+      will-change: width, height, border-radius, left, top;
+      pointer-events: none;
+    }
+    .card.card-on {
+      background: var(--card-bg);
+      -webkit-backdrop-filter: blur(24px) saturate(1.3);
+              backdrop-filter: blur(24px) saturate(1.3);
+      box-shadow: var(--card-shadow);
+    }
+
+    .card-content { position: absolute; inset: 0; opacity: 0; will-change: opacity, filter; }
+
+    .card-head { position: absolute; top: 22px; left: 24px; right: 24px; display: flex; align-items: baseline; gap: 5px; }
+    .card-counter { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .card-total   { font-size: 13px; font-weight: 500; letter-spacing: 0.5px; color: var(--text-2); }
+
+    .card-body { position: absolute; left: 0; right: 0; top: 54px; bottom: 38px; transition: opacity 140ms ease, filter 140ms ease; will-change: opacity, filter; }
+    .slider.is-fast .card-body { opacity: 0; filter: blur(8px); }
+    .card-layer { position: absolute; inset: 0; padding: 0 24px; opacity: 0; transition: opacity 0.2s ease; will-change: opacity; }
+    .card-layer.is-active { opacity: 1; }
+    .card-title { font-size: 20px; font-weight: 600; line-height: 1.22; letter-spacing: -0.02em; color: var(--text); margin-bottom: 8px; }
+    .card-desc  { font-size: 15px; font-weight: 400; line-height: 1.45; color: var(--text-2); }
+
+    .card-progress { position: absolute; left: 24px; right: 24px; bottom: 22px; height: 3px; border-radius: 2px; background: var(--hairline); overflow: hidden; }
+    .card-progress-fill { height: 100%; width: 0%; border-radius: 2px; background: var(--text); transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1); }
+    .slider.is-scrubbing .card-progress-fill { transition: none; }
+  </style>
+</head>
+<body>
+  <div class="slider" id="slider" role="slider" aria-label="Topic" aria-valuemin="1" aria-valuemax="20" aria-valuenow="1" aria-valuetext="Why the Sky Is Blue" tabindex="0">
+    <div class="track" id="track"></div>
+    <div class="card-wrap">
+      <div class="card" id="card">
+        <div class="card-content" id="cardContent">
+          <div class="card-head">
+            <span class="card-counter" id="counter">01</span>
+            <span class="card-total">/ 20</span>
+          </div>
+          <div class="card-body">
+            <div class="card-layer" id="layerA"><div class="card-title"></div><div class="card-desc"></div></div>
+            <div class="card-layer" id="layerB"><div class="card-title"></div><div class="card-desc"></div></div>
+          </div>
+          <div class="card-progress"><div class="card-progress-fill" id="progressFill"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+'use strict'
+
+// ============================================
+// 数据
+// ============================================
+const TOPICS = [
+  { title: 'Why the Sky Is Blue',   desc: 'Air scatters short blue wavelengths far more than red.' },
+  { title: 'The Antikythera Device', desc: 'A 2,000-year-old Greek computer that predicted eclipses.' },
+  { title: 'Octopus Minds',         desc: 'Two-thirds of their neurons live out in their arms.' },
+  { title: 'The Fermi Paradox',     desc: 'If the universe is so vast, where is everybody?' },
+  { title: 'Tardigrades',           desc: 'They can survive the raw vacuum of open space.' },
+  { title: 'Honey Never Spoils',    desc: 'Edible jars have been found in Egyptian tombs.' },
+  { title: 'The Mpemba Effect',     desc: 'Hot water can sometimes freeze faster than cold.' },
+  { title: 'Mantis Shrimp Vision',  desc: 'They see with sixteen types of color receptor.' },
+  { title: 'Phantom Traffic Jams',  desc: 'One brake tap can ripple backward for miles.' },
+  { title: 'The Golden Record',     desc: 'A map home, now drifting beyond the solar system.' },
+  { title: 'Why We Dream',          desc: 'The brain may rehearse for threats that never come.' },
+  { title: 'Bioluminescence',       desc: 'Most of the deep ocean glows with living light.' },
+  { title: 'The Placebo Effect',    desc: 'Belief alone can trigger real physical healing.' },
+  { title: 'The Great Filter',      desc: 'Maybe life’s hardest step is still ahead of us.' },
+  { title: 'Baader–Meinhof',        desc: 'Notice a thing once and it’s suddenly everywhere.' },
+  { title: 'Spaghettification',     desc: 'Fall into a black hole and you’re stretched thin.' },
+  { title: 'Wild Sourdough',        desc: 'Each loaf carries the yeast of the room it grew in.' },
+  { title: 'Why Cats Purr',         desc: 'The frequency may help bone and tissue heal.' },
+  { title: 'The Library of Babel',  desc: 'Every possible book, lost on infinite shelves.' },
+  { title: 'Deep Time',             desc: 'We’re a thin film on four billion years of Earth.' },
+]
+const N = TOPICS.length
+
+// ============================================
+// 配置
+// ============================================
+const MIN_VALUE = 0, MAX_VALUE = N - 1
+const TICK_SPACING = 30
+const LINE_BASE = 22, LINE_ACTIVE = 48, FALLOFF = 2.5
+const POINTER_W = LINE_ACTIVE
+const POINTER_H = 2 * 1.6
+const POINTER_R = POINTER_H / 2
+const CARD_H = 200, CARD_RADIUS = 28
+const CARD_K_IN = 240, CARD_B_IN = 26
+const CARD_K_OUT = 360, CARD_B_OUT = 38
+const CARD_LINGER = 1400
+const TICK_X_GAP = 22
+const CARD_TEXT_MAX_V = 0.18
+const MAX_FLING_TICKS = 7
+
+// iOS 滚动物理（移植自 FluidRecyclerView / fluid-scroll）
+const DECEL = 0.992, LN_DECEL = Math.log(0.992)
+const RUBBER = 0.55
+const SB_LAMBDA = 2 * Math.PI / 0.575
+const V_END = 0.01
+const V_MIN_FLING = 0.15
+const BOUNCE_DAMP = 0.45
+const MAX_POS = MAX_VALUE * TICK_SPACING
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+const lerp = (a, b, t) => a + (b - a) * t
+
+// ============================================
+// DOM + 刻度
+// ============================================
+const track = document.getElementById('track')
+const slider = document.getElementById('slider')
+const card = document.getElementById('card')
+const cardContent = document.getElementById('cardContent')
+const layerA = document.getElementById('layerA')
+const layerB = document.getElementById('layerB')
+const counter = document.getElementById('counter')
+const progressFill = document.getElementById('progressFill')
+
+const ticks = []
+for (let i = 0; i < N; i++) {
+  const el = document.createElement('div')
+  el.className = 'tick'
+  track.appendChild(el)
+  ticks.push(el)
+}
+
+// ============================================
+// 触觉
+// ============================================
+const supportsVibrate = 'vibrate' in navigator
+const hapticSwitch = document.createElement('label')
+hapticSwitch.setAttribute('aria-hidden', 'true')
+hapticSwitch.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;'
+{
+  const input = document.createElement('input')
+  input.type = 'checkbox'
+  input.setAttribute('switch', '')
+  hapticSwitch.appendChild(input)
+  document.body.appendChild(hapticSwitch)
+}
+function haptic(strong) { if (supportsVibrate) navigator.vibrate(strong ? 24 : 8); else hapticSwitch.click() }
+
+// ============================================
+// 卡片文字交叉淡入
+// ============================================
+let frontLayer = layerA, backLayer = layerB
+let cardIndex = 0
+let isFastMode = false
+
+function fillLayer(layer, idx) {
+  const t = TOPICS[idx]
+  layer.children[0].textContent = t.title
+  layer.children[1].textContent = t.desc
+}
+function updateChrome(idx) {
+  counter.textContent = String(idx + 1).padStart(2, '0')
+  progressFill.style.width = (idx / (N - 1) * 100) + '%'
+  slider.setAttribute('aria-valuenow', String(idx + 1))
+  slider.setAttribute('aria-valuetext', TOPICS[idx].title)
+}
+function updateCard(idx) {
+  fillLayer(backLayer, idx)
+  backLayer.classList.add('is-active')
+  frontLayer.classList.remove('is-active')
+  const tmp = frontLayer; frontLayer = backLayer; backLayer = tmp
+  cardIndex = idx
+  updateChrome(idx)
+}
+function setFastMode(on) {
+  if (isFastMode === on) return
+  isFastMode = on
+  slider.classList.toggle('is-fast', on)
+}
+function commitCard(idx) {
+  setFastMode(false)
+  if (cardIndex !== idx) updateCard(idx)
+  else updateChrome(idx)
+}
+
+// ============================================
+// 布局：标尺 + 卡片整体水平居中
+// ============================================
+let centerY = window.innerHeight / 2
+let rulerX = 0, cardX = 0, cardW = 300
+function layout() {
+  const vw = window.innerWidth
+  centerY = window.innerHeight / 2
+  cardW = clamp(vw * 0.76, 260, 400)
+  const groupW = LINE_ACTIVE + TICK_X_GAP + cardW
+  const groupLeft = Math.max(12, (vw - groupW) / 2)
+  rulerX = groupLeft
+  cardX = groupLeft + LINE_ACTIVE + TICK_X_GAP
+  document.documentElement.style.setProperty('--tick-x', rulerX + 'px')
+  applyCardGeom()
+}
+
+// ============================================
+// 卡片：从中线 active 刻度变形（竖直居中，不跟手）
+// ============================================
+let ct = 0, ctv = 0, ctDest = 0
+let cardK = CARD_K_IN, cardB = CARD_B_IN
+let cardRaf = null, cardLast = 0
+let hideTimer = null
+
+function applyCardGeom() {
+  const hgt = lerp(POINTER_H, CARD_H, ct)
+  card.style.left = lerp(rulerX, cardX, ct) + 'px'
+  card.style.top = (centerY - hgt / 2) + 'px'
+  card.style.width = lerp(POINTER_W, cardW, ct) + 'px'
+  card.style.height = hgt + 'px'
+  card.style.borderRadius = lerp(POINTER_R, CARD_RADIUS, ct) + 'px'
+  const cp = clamp((ct - 0.55) / 0.4, 0, 1)
+  cardContent.style.opacity = cp
+  cardContent.style.filter = `blur(${(1 - cp) * 8}px)`
+}
+function cardFrame(now) {
+  cardRaf = null
+  let dt = (now - cardLast) / 1000
+  cardLast = now
+  if (dt > 1 / 30) dt = 1 / 30
+  if (dt <= 0) dt = 1 / 60
+  const h = dt / 4
+  for (let i = 0; i < 4; i++) {
+    ctv += (-cardK * (ct - ctDest) - cardB * ctv) * h
+    ct += ctv * h
+  }
+  applyCardGeom()
+  if (Math.abs(ct - ctDest) < 0.0004 && Math.abs(ctv) < 0.0006) {
+    ct = ctDest; ctv = 0; applyCardGeom()
+  } else {
+    cardRaf = requestAnimationFrame(cardFrame)
+  }
+}
+function startCardSpring() { if (cardRaf == null) { cardLast = performance.now(); cardRaf = requestAnimationFrame(cardFrame) } }
+function setCardTarget(d) {
+  ctDest = d
+  if (d > 0.5) { cardK = CARD_K_IN; cardB = CARD_B_IN } else { cardK = CARD_K_OUT; cardB = CARD_B_OUT }
+  card.classList.toggle('card-on', d > 0.5)
+}
+function showCard() { clearTimeout(hideTimer); setCardTarget(1); startCardSpring() }
+function hideCard() { setCardTarget(0); startCardSpring() }
+function scheduleHide() { clearTimeout(hideTimer); hideTimer = setTimeout(hideCard, CARD_LINGER) }
+
+// ============================================
+// 滚动状态 + iOS 物理
+// ============================================
+let pos = 0
+let isDragging = false
+let dragStartY = 0, dragStartPos = 0
+let history = []
+let currentIndex = 0
+let anim = null, rafId = null
+let animVelocity = 0
+
+function rubberOffset(distance, range) { return (1 - 1 / (distance / range * RUBBER + 1)) * range }
+function rubberClamp(raw) {
+  const range = centerY || 400
+  if (raw < 0) return -rubberOffset(-raw, range)
+  if (raw > MAX_POS) return MAX_POS + rubberOffset(raw - MAX_POS, range)
+  return raw
+}
+function decayAnim(p0, v0ms, target) {
+  return {
+    kind: 'decay', target,
+    sample(t) {
+      const rt = Math.pow(DECEL, t)
+      const vel = v0ms * rt
+      return { value: p0 + v0ms * (1 / LN_DECEL) * (rt - 1), vel, finished: Math.abs(vel) < V_END }
+    }
+  }
+}
+function springBackAnim(target, v0ms) {
+  const c1 = pos - target
+  const c2 = v0ms * 1000 + SB_LAMBDA * c1
+  return {
+    kind: 'spring', target,
+    sample(t) {
+      const ts = t / 1000
+      const e = Math.exp(-SB_LAMBDA * ts)
+      const offset = (c1 + c2 * ts) * e
+      const vps = (c2 - SB_LAMBDA * (c1 + c2 * ts)) * e
+      return { value: target + offset, vel: vps / 1000, finished: Math.abs(offset) < 0.1 && Math.abs(vps) / 1000 < V_END }
+    }
+  }
+}
+function startAnim(a) {
+  anim = a
+  anim.t0 = null
+  slider.classList.add('is-scrubbing')
+  if (rafId == null) rafId = requestAnimationFrame(animate)
+}
+function stopAnim() {
+  anim = null
+  animVelocity = 0
+  commitCard(currentIndex)
+  slider.classList.remove('is-scrubbing')
+  if (rafId != null) { cancelAnimationFrame(rafId); rafId = null }
+}
+function shouldDeferCardUpdate() {
+  return anim && anim.kind === 'decay' && animVelocity > CARD_TEXT_MAX_V
+}
+
+function animate(now) {
+  rafId = null
+  if (!anim) return
+  if (anim.t0 == null) anim.t0 = now
+  const s = anim.sample(now - anim.t0)
+  animVelocity = Math.abs(s.vel)
+  pos = s.value
+  if (anim.kind === 'decay' && anim.target == null && (pos < 0 || pos > MAX_POS)) {
+    startAnim(springBackAnim(pos < 0 ? 0 : MAX_POS, s.vel * BOUNCE_DAMP))
+    return
+  }
+  draw()
+  if (s.finished) {
+    pos = anim.target != null ? anim.target : clamp(Math.round(pos / TICK_SPACING), MIN_VALUE, MAX_VALUE) * TICK_SPACING
+    draw()
+    anim = null
+    animVelocity = 0
+    commitCard(currentIndex)
+    slider.classList.remove('is-scrubbing')
+    if (!isDragging) scheduleHide()
+    return
+  }
+  rafId = requestAnimationFrame(animate)
+}
+
+// ============================================
+// 画一帧：滚动刻度 + 切 topic
+// ============================================
+function draw() {
+  const centerIndex = pos / TICK_SPACING
+  for (let i = 0; i < N; i++) {
+    const d = Math.abs(i - centerIndex)
+    const y = centerY + (i * TICK_SPACING - pos)
+    const t = Math.max(0, 1 - d / FALLOFF)
+    const e = t * t * (3 - 2 * t)
+    const sx = (LINE_BASE + (LINE_ACTIVE - LINE_BASE) * e) / LINE_BASE
+    const sy = 1 + 0.6 * e
+    ticks[i].style.transform = `translateY(${y}px) scaleX(${sx}) scaleY(${sy})`
+    ticks[i].style.opacity = 0.18 + 0.82 * e
+  }
+  const idx = clamp(Math.round(centerIndex), MIN_VALUE, MAX_VALUE)
+  if (idx !== currentIndex) {
+    currentIndex = idx
+    haptic(idx === MIN_VALUE || idx === MAX_VALUE)
+    if (shouldDeferCardUpdate()) {
+      updateChrome(idx)
+      setFastMode(true)
+    } else {
+      commitCard(idx)
+    }
+  } else if (isFastMode && !shouldDeferCardUpdate()) {
+    commitCard(idx)
+  }
+}
+
+// ============================================
+// 手势：拖拽 + 惯性甩动
+// ============================================
+slider.addEventListener('pointerdown', e => {
+  slider.setPointerCapture(e.pointerId)
+  stopAnim()
+  isDragging = true
+  slider.classList.add('is-scrubbing')
+  showCard()
+  dragStartY = e.clientY
+  dragStartPos = pos
+  history = [{ y: e.clientY, time: performance.now() }]
+})
+slider.addEventListener('pointermove', e => {
+  if (!isDragging) return
+  pos = rubberClamp(dragStartPos + (dragStartY - e.clientY))
+  history.push({ y: e.clientY, time: performance.now() })
+  if (history.length > 10) history.shift()
+  draw()
+})
+function endDrag() {
+  if (!isDragging) return
+  isDragging = false
+  const now = performance.now()
+  let vps = 0
+  if (history.length >= 2) {
+    let i = history.length - 1
+    while (i > 0 && now - history[i].time < 100) i--
+    const dt = now - history[i].time
+    if (dt > 0) vps = (history[i].y - history.at(-1).y) / dt * 1000
+  }
+  const vms = vps / 1000
+  if (pos < 0 || pos > MAX_POS) {
+    startAnim(springBackAnim(pos < 0 ? 0 : MAX_POS, vms))
+    return
+  }
+  const maxFlingDistance = MAX_FLING_TICKS * TICK_SPACING
+  const natural = clamp(pos - vms / LN_DECEL, pos - maxFlingDistance, pos + maxFlingDistance)
+  if (Math.abs(vms) < V_MIN_FLING) {
+    startAnim(springBackAnim(clamp(Math.round(pos / TICK_SPACING), MIN_VALUE, MAX_VALUE) * TICK_SPACING, vms))
+  } else if (natural < 0 || natural > MAX_POS) {
+    startAnim(decayAnim(pos, -(natural - pos) * LN_DECEL, null))
+  } else {
+    const snapped = clamp(Math.round(natural / TICK_SPACING), MIN_VALUE, MAX_VALUE) * TICK_SPACING
+    startAnim(decayAnim(pos, -(snapped - pos) * LN_DECEL, snapped))
+  }
+}
+slider.addEventListener('pointerup', endDrag)
+slider.addEventListener('pointercancel', endDrag)
+
+// ============================================
+// 桌面：滚轮 + 方向键
+// ============================================
+const WHEEL_SCALE = 0.5
+let wheelStopTimer = null
+slider.addEventListener('wheel', e => {
+  e.preventDefault()
+  stopAnim()
+  slider.classList.add('is-scrubbing')
+  showCard()
+  let d = e.deltaY
+  if (e.deltaMode === 1) d *= 16
+  else if (e.deltaMode === 2) d *= window.innerHeight
+  pos = rubberClamp(pos + d * WHEEL_SCALE)
+  draw()
+  clearTimeout(wheelStopTimer)
+  wheelStopTimer = setTimeout(() => {
+    const target = (pos < 0 || pos > MAX_POS) ? (pos < 0 ? 0 : MAX_POS) : clamp(Math.round(pos / TICK_SPACING), MIN_VALUE, MAX_VALUE) * TICK_SPACING
+    startAnim(springBackAnim(target, 0))
+  }, 130)
+}, { passive: false })
+
+window.addEventListener('keydown', e => {
+  let dir = 0
+  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') dir = -1
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') dir = 1
+  else return
+  e.preventDefault()
+  stopAnim()
+  showCard()
+  startAnim(springBackAnim(clamp(currentIndex + dir, MIN_VALUE, MAX_VALUE) * TICK_SPACING, 0))
+})
+
+// ============================================
+// 自适应 + 初始
+// ============================================
+window.addEventListener('resize', () => { centerY = window.innerHeight / 2; layout(); draw() })
+
+layout()
+fillLayer(frontLayer, 0)
+frontLayer.classList.add('is-active')
+counter.textContent = '01'
+progressFill.style.width = '0%'
+draw()
+</script>
+
+  <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"></button>
+  <script>
+    (function () {
+      const SUN = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>'
+      const MOON = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>'
+      const btn = document.getElementById('themeToggle')
+      function apply(light) {
+        document.body.classList.toggle('light', light)
+        btn.innerHTML = light ? SUN : MOON
+        try { localStorage.setItem('topics-theme', light ? 'light' : 'dark') } catch (e) {}
+      }
+      let saved = null
+      try { saved = localStorage.getItem('topics-theme') } catch (e) {}
+      apply(saved ? saved === 'light'
+        : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches))
+      btn.addEventListener('click', function (e) { e.stopPropagation(); apply(!document.body.classList.contains('light')) })
+    })()
+  </script>
+</body>
+</html>
