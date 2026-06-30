@@ -83,16 +83,20 @@
       position: fixed;
       overflow: hidden;
       background: var(--pill);         /* 指针态：刻度色药丸 */
-      transition: background-color 400ms ease, box-shadow 400ms ease;
+      transition: background-color 400ms ease;
       will-change: width, height, border-radius, left, top;
-      border: 1px solid var(--card-border);
       pointer-events: none;
     }
-    .card.card-on {                    /* 卡片态：深灰面板 */
+    /* 卡片表面：颜色/阴影/描边在这层，opacity 由 JS 跟随变形进度 ct（色随形走） */
+    .card-surface {
+      position: absolute; inset: 0; border-radius: inherit;
       background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      border: 1px solid var(--card-border);
       -webkit-backdrop-filter: blur(24px) saturate(1.3);
               backdrop-filter: blur(24px) saturate(1.3);
-      box-shadow: var(--card-shadow);
+      opacity: 0; pointer-events: none;
+      transition: background-color 400ms ease, box-shadow 400ms ease, border-color 400ms ease;
     }
 
     .card-content {
@@ -105,12 +109,13 @@
     .card-head {
       position: absolute;
       top: 22px; left: 24px; right: 24px;
-      display: flex; align-items: baseline; gap: 5px;
+      display: flex; align-items: center; gap: 5px;
     }
     .card-counter { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); font-variant-numeric: tabular-nums; }
     .card-total   { font-size: 13px; font-weight: 500; letter-spacing: 0.5px; color: var(--text-2); }
 
-    .card-body { position: absolute; left: 0; right: 0; top: 54px; bottom: 38px; }
+    .card-body { position: absolute; left: 0; right: 0; top: 54px; bottom: 38px; transition: opacity 140ms ease, filter 140ms ease; will-change: opacity, filter; }
+    .slider.is-fast .card-body { opacity: 0; filter: blur(8px); }
     .card-layer {
       position: absolute; inset: 0; padding: 0 24px;
       opacity: 0; transition: opacity 0.2s ease; will-change: opacity;
@@ -135,9 +140,10 @@
     <div class="track" id="track"></div>
     <div class="card-wrap">
       <div class="card" id="card">
+        <div class="card-surface" id="cardSurface"></div>
         <div class="card-content" id="cardContent">
           <div class="card-head">
-            <span class="card-counter" id="counter">01</span>
+            <div class="card-counter" id="counter"></div>
             <span class="card-total">/ 20</span>
           </div>
           <div class="card-body">
@@ -150,6 +156,93 @@
     </div>
   </div>
 
+<script>
+/* SpringNumber — 每位数字独立弹簧滚动（来自仓库 spring-number.js，加 minDigits 补零） */
+class SpringNumber {
+  constructor(container, options = {}) {
+    this.container = typeof container === 'string' ? document.querySelector(container) : container
+    this.options = { value: 0, k: 120, b: 16, digitHeight: 72, digitWidth: 36, fontSize: 56, fontWeight: 300, color: '#fff', minDigits: 0, ...options }
+    this.digits = []; this.animatedUntil = null; this.rafId = null; this.msPerStep = 4
+    this.currentValue = this.options.value
+    this.container.style.display = 'flex'
+    this._injectStyles(); this._updateDisplay(this.options.value, false)
+  }
+  _injectStyles() {
+    if (document.getElementById('spring-number-styles')) return
+    const style = document.createElement('style'); style.id = 'spring-number-styles'
+    style.textContent = '.spring-digit{overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom,transparent 0%,black 12%,black 88%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0%,black 12%,black 88%,transparent 100%)}.spring-digit-wrapper{display:flex;flex-direction:column;position:absolute;top:0;left:0;width:100%;will-change:transform,filter,opacity}.spring-digit-wrapper span{display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}'
+    document.head.appendChild(style)
+  }
+  _spring(pos, k = this.options.k, b = this.options.b) { return { pos, dest: pos, v: 0, k, b } }
+  _springStep(s) { const t = this.msPerStep / 1000; const a = -s.k * (s.pos - s.dest) - s.b * s.v; s.v += a * t; s.pos += s.v * t }
+  _springIsDone(s) { return Math.abs(s.v) < 0.3 && Math.abs(s.dest - s.pos) < 0.3 }
+  _createDigits(count) {
+    this.container.innerHTML = ''; this.digits = []
+    const { digitHeight, digitWidth, fontSize, fontWeight, color } = this.options
+    for (let i = 0; i < count; i++) {
+      const digitEl = document.createElement('div'); digitEl.className = 'spring-digit'
+      digitEl.style.width = digitWidth + 'px'; digitEl.style.height = digitHeight + 'px'
+      const wrapper = document.createElement('div'); wrapper.className = 'spring-digit-wrapper'
+      for (let n = 0; n <= 9; n++) {
+        const span = document.createElement('span'); span.textContent = n
+        span.style.height = digitHeight + 'px'; span.style.fontSize = fontSize + 'px'; span.style.fontWeight = fontWeight; span.style.color = color
+        wrapper.appendChild(span)
+      }
+      digitEl.appendChild(wrapper); this.container.appendChild(digitEl)
+      this.digits.push({ wrapper, y: this._spring(0), opacity: this._spring(1, 200, 25) })
+    }
+  }
+  _paint(d) {
+    const blur = Math.min(Math.abs(d.y.v) / 600, 5)
+    d.wrapper.style.transform = 'translateY(' + d.y.pos + 'px)'
+    d.wrapper.style.filter = blur > 0.1 ? 'blur(' + blur + 'px)' : 'none'
+    d.wrapper.style.opacity = Math.max(0, Math.min(1, d.opacity.pos))
+  }
+  _render = (now) => {
+    if (this.animatedUntil === null) this.animatedUntil = now
+    const steps = Math.floor((now - this.animatedUntil) / this.msPerStep)
+    this.animatedUntil += steps * this.msPerStep
+    let going = false
+    for (const d of this.digits) {
+      for (let i = 0; i < steps; i++) { this._springStep(d.y); this._springStep(d.opacity) }
+      if (this._springIsDone(d.y)) { d.y.pos = d.y.dest; d.y.v = 0 } else going = true
+      if (this._springIsDone(d.opacity)) { d.opacity.pos = d.opacity.dest; d.opacity.v = 0 } else going = true
+      this._paint(d)
+    }
+    if (going) this.rafId = requestAnimationFrame(this._render)
+    else { this.rafId = null; this.animatedUntil = null }
+  }
+  _scheduleRender() { if (this.rafId === null) this.rafId = requestAnimationFrame(this._render) }
+  _setDigit(index, targetDigit, instant) {
+    const d = this.digits[index]; if (!d) return
+    const targetY = -targetDigit * this.options.digitHeight
+    if (instant) { d.y.dest = targetY; d.opacity.dest = 1; this._scheduleRender(); return }
+    if (Math.abs(d.y.dest - targetY) < 0.1) {
+      d.y.dest = targetY - this.options.digitHeight * 0.35; d.opacity.dest = 0.7; this._scheduleRender()
+      setTimeout(() => { d.y.dest = targetY; d.opacity.dest = 1; this._scheduleRender() }, 70); return
+    }
+    d.opacity.dest = 0.3
+    setTimeout(() => { d.y.dest = targetY; d.opacity.dest = 1; this._scheduleRender() }, 80)
+    this._scheduleRender()
+  }
+  _updateDisplay(num, animate = true, instant = false) {
+    let str = String(num)
+    if (this.options.minDigits) str = str.padStart(this.options.minDigits, '0')
+    if (str.length !== this.digits.length) {
+      this._createDigits(str.length)
+      for (let i = 0; i < str.length; i++) {
+        const targetY = -parseInt(str[i]) * this.options.digitHeight
+        if (animate) { this.digits[i].y.pos = targetY + this.options.digitHeight; this.digits[i].y.dest = targetY; this.digits[i].opacity.pos = 0; this.digits[i].opacity.dest = 1 }
+        else { this.digits[i].y.pos = targetY; this.digits[i].y.dest = targetY }
+      }
+      for (const d of this.digits) this._paint(d)
+      if (animate) this._scheduleRender()
+    } else if (!animate) { for (const d of this.digits) this._paint(d) }
+    if (animate) { for (let i = 0; i < str.length; i++) this._setDigit(i, parseInt(str[i]), instant) }
+  }
+  setValue(value, instant = false) { this.currentValue = value; this._updateDisplay(value, true, instant) }
+}
+</script>
 <script>
 'use strict'
 
@@ -207,10 +300,12 @@ const track = document.getElementById('track')
 const slider = document.getElementById('slider')
 const card = document.getElementById('card')
 const cardContent = document.getElementById('cardContent')
+const cardSurface = document.getElementById('cardSurface')
 const layerA = document.getElementById('layerA')
 const layerB = document.getElementById('layerB')
 const counter = document.getElementById('counter')
 const progressFill = document.getElementById('progressFill')
+const counterNum = new SpringNumber(counter, { value: 1, minDigits: 2, k: 130, b: 16, digitHeight: 18, digitWidth: 8, fontSize: 13, fontWeight: 600, color: 'currentColor' })
 
 const ticks = []
 for (let i = 0; i < N; i++) {
@@ -249,16 +344,27 @@ function fillLayer(layer, idx) {
   layer.children[0].textContent = t.title
   layer.children[1].textContent = t.desc
 }
-function updateCard(idx) {
-  fillLayer(backLayer, idx)
-  backLayer.classList.add('is-active')
-  frontLayer.classList.remove('is-active')
-  const tmp = frontLayer; frontLayer = backLayer; backLayer = tmp
-  counter.textContent = String(idx + 1).padStart(2, '0')
+// 计数器/进度条/aria —— 始终实时更新
+function updateChrome(idx) {
+  counterNum.setValue(idx + 1, true)
   progressFill.style.width = (idx / (N - 1) * 100) + '%'
   slider.setAttribute('aria-valuenow', String(idx + 1))
   slider.setAttribute('aria-valuetext', TOPICS[idx].title)
 }
+// 标题/描述文字 —— 快滑时延迟、停下才提交（避免残影）
+let committedIdx = 0
+let commitTimer = null
+let lastChangeT = -1e9
+function setFast(on) { slider.classList.toggle('is-fast', on) }
+function commitText(idx) {
+  if (idx === committedIdx) return
+  committedIdx = idx
+  fillLayer(backLayer, idx)
+  backLayer.classList.add('is-active')
+  frontLayer.classList.remove('is-active')
+  const tmp = frontLayer; frontLayer = backLayer; backLayer = tmp
+}
+function commitNow() { clearTimeout(commitTimer); commitText(activeIndex); setFast(false) }
 
 // ============================================
 // 布局：固定显示全部刻度（竖直居中）+ 卡片，整组水平居中
@@ -304,9 +410,19 @@ function setSel(s) {
   drawTicks()
   const idx = clamp(Math.round(sel), 0, N - 1)
   if (idx !== activeIndex) {
+    const now = performance.now()
+    const fast = (now - lastChangeT) < 70     // 连切间隔 < 70ms = 快滑
+    lastChangeT = now
     activeIndex = idx
     haptic(idx === 0 || idx === N - 1)
-    updateCard(idx)
+    updateChrome(idx)
+    if (fast) {
+      setFast(true)                           // 文字先模糊
+      clearTimeout(commitTimer)
+      commitTimer = setTimeout(commitNow, 110)  // 停下来才提交清晰文字
+    } else {
+      commitNow()                             // 慢切 → 立即提交，不模糊
+    }
   }
 }
 function activeTickY() { return rulerTop + activeIndex * spacing }
@@ -330,6 +446,7 @@ function applyCardGeom() {
   card.style.width = lerp(POINTER_W, cardW, ct) + 'px'
   card.style.height = hgt + 'px'
   card.style.borderRadius = lerp(POINTER_R, CARD_RADIUS, ct) + 'px'
+  cardSurface.style.opacity = clamp(ct * 1.3, 0, 1)   // 颜色/阴影跟随形变进度
   const cp = clamp((ct - 0.55) / 0.4, 0, 1)
   cardContent.style.opacity = cp
   cardContent.style.filter = `blur(${(1 - cp) * 8}px)`
@@ -363,7 +480,6 @@ function setCardTarget(d) {
   ctDest = d
   if (d > 0.5) { cardK = CARD_K_IN; cardB = CARD_B_IN }
   else { cardK = CARD_K_OUT; cardB = CARD_B_OUT }
-  card.classList.toggle('card-on', d > 0.5)
 }
 function showCard() { clearTimeout(hideTimer); setCardTarget(1); startCardSpring() }
 function hideCard() { setCardTarget(0); startCardSpring() }
@@ -407,6 +523,7 @@ function endInteract() {
   if (!hasCommittedDrag) setSel(selFromY(lastY)) // 轻点仍然可以选择，但不在按下瞬间误跳
   slider.classList.remove('is-scrubbing')
   setSel(activeIndex)             // 吸附到整刻度
+  commitNow()                     // 松手 → 立即提交清晰文字
   cyDest = activeTickY() // 卡片对齐到选中刻度
   startCardSpring()
   scheduleHide()
@@ -433,6 +550,7 @@ slider.addEventListener('wheel', e => {
   clearTimeout(wheelStopTimer)
   wheelStopTimer = setTimeout(() => {
     setSel(activeIndex)
+    commitNow()
     slider.classList.remove('is-scrubbing')
     cyDest = activeTickY()
     startCardSpring()
@@ -472,7 +590,6 @@ activeIndex = 0
 sel = 0
 fillLayer(frontLayer, 0)
 frontLayer.classList.add('is-active')
-counter.textContent = '01'
 progressFill.style.width = '0%'
 cy = cyDest = activeTickY()
 applyCardGeom()
