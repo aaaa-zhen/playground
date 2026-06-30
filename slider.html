@@ -16,6 +16,7 @@
       --text-2: rgba(255,255,255,0.62);
       --hairline: rgba(255,255,255,0.12);
       --card-bg: rgba(118,118,128,0.24);
+      --card-border: transparent;
       --card-shadow: 0 14px 36px rgba(0,0,0,0.25);
       --card-radius: 28px;
       --sans: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
@@ -28,7 +29,8 @@
       --text: #1c1c1e;
       --text-2: rgba(0,0,0,0.55);
       --hairline: rgba(0,0,0,0.12);
-      --card-bg: rgba(118,118,128,0.14);
+      --card-bg: #ffffff;
+      --card-border: rgba(0,0,0,0.06);
       --card-shadow: 0 12px 30px rgba(0,0,0,0.10);
     }
     .theme-toggle {
@@ -83,6 +85,7 @@
       background: var(--pill);         /* 指针态：刻度色药丸 */
       transition: background-color 400ms ease, box-shadow 400ms ease;
       will-change: width, height, border-radius, left, top;
+      border: 1px solid var(--card-border);
       pointer-events: none;
     }
     .card.card-on {                    /* 卡片态：深灰面板 */
