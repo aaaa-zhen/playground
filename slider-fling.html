@@ -552,8 +552,7 @@ draw()
       }
       let saved = null
       try { saved = localStorage.getItem('topics-theme') } catch (e) {}
-      apply(saved ? saved === 'light'
-        : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches))
+      apply(saved === 'light')   // 默认黑色，仅当手动选过浅色才用浅色
       btn.addEventListener('click', function (e) { e.stopPropagation(); apply(!document.body.classList.contains('light')) })
     })()
   </script>
