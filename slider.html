@@ -15,25 +15,14 @@
       --text: #fff;
       --text-2: rgba(255,255,255,0.62);
       --hairline: rgba(255,255,255,0.12);
-      --card-bg: rgba(118,118,128,0.24);
-      --card-border: transparent;
-      --card-shadow: 0 14px 36px rgba(0,0,0,0.25);
+      --card-bg: #161618;
+      --card-border: rgba(255,255,255,0.08);
+      --card-shadow: 0 18px 50px -12px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
       --card-radius: 28px;
       --sans: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
-      --tick-x: 9%;
+      --tick-right: 9%;
     }
-    body.light {
-      --bg: #ffffff;
-      --tick: #1c1c1e;
-      --pill: #1c1c1e;
-      --text: #1c1c1e;
-      --text-2: rgba(0,0,0,0.55);
-      --hairline: rgba(0,0,0,0.12);
-      --card-bg: #ffffff;
-      --card-border: rgba(0,0,0,0.06);
-      --card-shadow: 0 12px 30px rgba(0,0,0,0.10);
-    }
-    .theme-toggle {
+    .icon-btn {
       position: fixed;
       top: max(16px, env(safe-area-inset-top)); right: 16px;
       width: 40px; height: 40px;
@@ -43,8 +32,9 @@
       color: var(--text); cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       z-index: 10; padding: 0; -webkit-tap-highlight-color: transparent;
-      transition: background-color 400ms ease, color 400ms ease;
+      transition: opacity 200ms ease;
     }
+    .icon-btn.is-off { opacity: 0.45; }
 
     html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
     body { font-family: var(--sans); background: var(--bg); transition: background-color 400ms ease; }
@@ -53,6 +43,7 @@
     .slider {
       position: fixed;
       inset: 0;
+      z-index: 3;
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
@@ -61,18 +52,18 @@
       cursor: pointer;
     }
 
-    .track { position: fixed; inset: 0; }
+    .track { position: fixed; inset: 0; pointer-events: none; }
 
-    /* 单条刻度：top 由 JS 固定摆放；scaleX/scaleY 表示选中强弱 */
+    /* 单条刻度：右端对齐、向左生长（active 长线指向左边卡片）；top 由 JS 固定摆放 */
     .tick {
       position: absolute;
-      left: var(--tick-x);
+      right: var(--tick-right);
       top: 0;
-      width: 22px;                     /* = LINE_BASE */
+      width: 16px;                     /* = LINE_BASE */
       height: 2px;
       background: var(--tick);
       border-radius: 1px;
-      transform-origin: left center;
+      transform-origin: right center;
     }
 
     /* 卡片层（整屏，不挡触摸） */
@@ -93,16 +84,15 @@
       background: var(--pill); pointer-events: none;
       transition: background-color 400ms ease;
     }
-    /* 卡片表面：颜色/阴影/描边在这层，opacity 由 JS 跟随变形进度 ct（色随形走） */
+    /* 卡片表面：纯黑冷峻——深色不透 + 内部微渐变 + 柔阴影（无描边） */
     .card-surface {
       position: absolute; inset: 0; border-radius: inherit;
-      background: var(--card-bg);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0) 38%),
+        var(--card-bg);
       box-shadow: var(--card-shadow);
-      border: 1px solid var(--card-border);
-      -webkit-backdrop-filter: blur(24px) saturate(1.3);
-              backdrop-filter: blur(24px) saturate(1.3);
       opacity: 0; pointer-events: none;
-      transition: background-color 400ms ease, box-shadow 400ms ease, border-color 400ms ease;
+      transition: background-color 400ms ease, box-shadow 400ms ease;
     }
 
     .card-content {
@@ -114,31 +104,23 @@
 
     .card-head {
       position: absolute;
-      top: 22px; left: 24px; right: 24px;
-      display: flex; align-items: center; gap: 5px;
+      top: 17px; left: 20px; right: 20px;
+      display: flex; align-items: center; gap: 6px;
     }
-    .card-counter { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); font-variant-numeric: tabular-nums; }
-    .card-total   { font-size: 13px; font-weight: 500; letter-spacing: 0.5px; color: var(--text-2); }
+    .card-counter { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .card-total   { font-size: 11px; font-weight: 500; letter-spacing: 0.6px; color: rgba(255,255,255,0.40); }
 
-    .card-body { position: absolute; left: 0; right: 0; top: 54px; bottom: 38px; transition: opacity 140ms ease, filter 140ms ease; will-change: opacity, filter; }
+    .card-body { position: absolute; left: 0; right: 0; top: 41px; bottom: 16px; transition: opacity 140ms ease, filter 140ms ease; will-change: opacity, filter; }
     .slider.is-fast .card-body { opacity: 0; filter: blur(8px); }
     .card-layer {
-      position: absolute; inset: 0; padding: 0 24px;
+      position: absolute; inset: 0; padding: 0 20px;
       opacity: 0; transition: opacity 0.2s ease; will-change: opacity;
     }
     .card-layer.is-active { opacity: 1; }
-    .card-title { font-size: 20px; font-weight: 600; line-height: 1.22; letter-spacing: -0.02em; color: var(--text); margin-bottom: 8px; }
-    .card-desc  { font-size: 15px; font-weight: 400; line-height: 1.45; color: var(--text-2); }
-
-    .card-progress {
-      position: absolute; left: 24px; right: 24px; bottom: 22px;
-      height: 3px; border-radius: 2px; background: var(--hairline); overflow: hidden;
-    }
-    .card-progress-fill {
-      height: 100%; width: 0%; border-radius: 2px; background: var(--text);
-      transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
-    }
-    .slider.is-scrubbing .card-progress-fill { transition: none; }
+    .card-title { font-size: 18px; font-weight: 650; line-height: 1.18; letter-spacing: -0.022em; color: var(--text); margin-bottom: 6px;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .card-desc  { font-size: 13.5px; font-weight: 400; line-height: 1.38; letter-spacing: -0.005em; color: rgba(255,255,255,0.52);
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
 </head>
 <body>
@@ -157,7 +139,6 @@
             <div class="card-layer" id="layerA"><div class="card-title"></div><div class="card-desc"></div></div>
             <div class="card-layer" id="layerB"><div class="card-title"></div><div class="card-desc"></div></div>
           </div>
-          <div class="card-progress"><div class="card-progress-fill" id="progressFill"></div></div>
         </div>
       </div>
     </div>
@@ -177,7 +158,7 @@ class SpringNumber {
   _injectStyles() {
     if (document.getElementById('spring-number-styles')) return
     const style = document.createElement('style'); style.id = 'spring-number-styles'
-    style.textContent = '.spring-digit{overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom,transparent 0%,black 12%,black 88%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0%,black 12%,black 88%,transparent 100%)}.spring-digit-wrapper{display:flex;flex-direction:column;position:absolute;top:0;left:0;width:100%;will-change:transform,filter,opacity}.spring-digit-wrapper span{display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}'
+    style.textContent = '.spring-digit{overflow:hidden;position:relative}.spring-digit-wrapper{display:flex;flex-direction:column;position:absolute;top:0;left:0;width:100%;will-change:transform,filter,opacity}.spring-digit-wrapper span{display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}'
     document.head.appendChild(style)
   }
   _spring(pos, k = this.options.k, b = this.options.b) { return { pos, dest: pos, v: 0, k, b } }
@@ -283,19 +264,18 @@ const N = TOPICS.length
 // ============================================
 // 配置
 // ============================================
-const LINE_BASE   = 22, LINE_ACTIVE = 48, FALLOFF = 2.5   // 刻度视觉
+const LINE_BASE   = 16, LINE_ACTIVE = 34, FALLOFF = 2.5   // 刻度视觉（更小）
 const POINTER_W   = LINE_ACTIVE
 const POINTER_H   = 2 * 1.6
 const POINTER_R   = POINTER_H / 2
-const CARD_H      = 200, CARD_RADIUS = 28
+const CARD_H      = 146, CARD_RADIUS = 24
 const CARD_K_IN   = 240, CARD_B_IN = 26     // 出现：略回弹
 const CARD_K_OUT  = 540, CARD_B_OUT = 47    // 收回：更快 + 临界阻尼（不回弹）
-const CY_K        = 320, CY_B = 32          // 卡片竖直跟手弹簧
+const CY_K        = 250, CY_B = 28          // 卡片竖直跟手弹簧（带一点点拖拽延迟，不过头）
 const CARD_LINGER = 1400
 const TICK_X_GAP  = 22
 const MAX_SPACING = 34                       // 刻度最大间距
 const DRAG_SLOP   = 8
-const FINGER_OFFSET = 18
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 const lerp = (a, b, t) => a + (b - a) * t
@@ -312,7 +292,6 @@ const cardPill = document.getElementById('cardPill')
 const layerA = document.getElementById('layerA')
 const layerB = document.getElementById('layerB')
 const counter = document.getElementById('counter')
-const progressFill = document.getElementById('progressFill')
 const counterNum = new SpringNumber(counter, { value: 1, minDigits: 2, k: 130, b: 16, digitHeight: 18, digitWidth: 8, fontSize: 13, fontWeight: 600, color: 'currentColor' })
 
 const ticks = []
@@ -337,9 +316,38 @@ hapticSwitch.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;o
   hapticSwitch.appendChild(input)
   document.body.appendChild(hapticSwitch)
 }
+// 轻音反馈：手机端没有 haptic，滑过每根刻度播一声短促的 "tick"
+let audioCtx = null
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (AC) audioCtx = new AC()
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume()
+}
+function tickSound(strong) {
+  if (window.soundMuted) return
+  if (!audioCtx || audioCtx.state !== 'running') return
+  const now = audioCtx.currentTime
+  const osc = audioCtx.createOscillator()
+  const gain = audioCtx.createGain()
+  osc.type = 'sine'
+  // 端点更高更明显，普通刻度更轻
+  osc.frequency.setValueAtTime(strong ? 1100 : 760, now)
+  osc.frequency.exponentialRampToValueAtTime(strong ? 660 : 520, now + 0.03)
+  const peak = strong ? 0.18 : 0.09
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(peak, now + 0.004)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055)
+  osc.connect(gain).connect(audioCtx.destination)
+  osc.start(now)
+  osc.stop(now + 0.06)
+}
+
 function haptic(strong) {
   if (supportsVibrate) navigator.vibrate(strong ? 24 : 8)
   else hapticSwitch.click()
+  tickSound(strong)   // 同步播一声轻音（无 haptic 的手机端也有反馈）
 }
 
 // ============================================
@@ -352,10 +360,9 @@ function fillLayer(layer, idx) {
   layer.children[0].textContent = t.title
   layer.children[1].textContent = t.desc
 }
-// 计数器/进度条/aria —— 始终实时更新
+// 计数器/aria —— 始终实时更新
 function updateChrome(idx) {
   counterNum.setValue(idx + 1, true)
-  progressFill.style.width = (idx / (N - 1) * 100) + '%'
   slider.setAttribute('aria-valuenow', String(idx + 1))
   slider.setAttribute('aria-valuetext', TOPICS[idx].title)
 }
@@ -383,14 +390,15 @@ let rulerX = 0, cardX = 0, cardW = 300, spacing = 30, rulerTop = 0
 function layout() {
   const vw = window.innerWidth, vh = window.innerHeight
   centerY = vh / 2
-  cardW = clamp(vw * 0.76, 260, 400)
-  const groupW = LINE_ACTIVE + TICK_X_GAP + cardW
+  cardW = clamp(vw * 0.6, 210, 300)
+  const groupW = cardW + TICK_X_GAP + LINE_ACTIVE
   const groupLeft = Math.max(12, (vw - groupW) / 2)
-  rulerX = groupLeft
-  cardX = groupLeft + LINE_ACTIVE + TICK_X_GAP
+  cardX = groupLeft                                  // 卡片在左
+  rulerX = groupLeft + cardW + TICK_X_GAP            // 标尺在右
   spacing = Math.min(MAX_SPACING, (vh * 0.78) / (N - 1))   // 全部塞进 78% 高度
   rulerTop = centerY - (N - 1) * spacing / 2
-  document.documentElement.style.setProperty('--tick-x', rulerX + 'px')
+  // 刻度右端对齐到标尺列右缘，向左生长
+  document.documentElement.style.setProperty('--tick-right', (vw - (rulerX + LINE_ACTIVE)) + 'px')
   for (let i = 0; i < N; i++) ticks[i].style.top = (rulerTop + i * spacing) + 'px'
   applyCardGeom()
   drawTicks()
@@ -434,6 +442,7 @@ function setSel(s) {
   }
 }
 function activeTickY() { return rulerTop + activeIndex * spacing }
+function selY() { return rulerTop + sel * spacing }   // 连续选择位置的 Y（卡片跟手用）
 function selFromY(clientY) { return clamp((clientY - rulerTop) / spacing, 0, N - 1) }
 
 // ============================================
@@ -495,27 +504,26 @@ function hideCard() { setCardTarget(0); startCardSpring() }
 function scheduleHide() { clearTimeout(hideTimer); hideTimer = setTimeout(hideCard, CARD_LINGER) }
 
 // ============================================
-// 交互：指针指到哪根 = active；卡片贴着指针走
+// 交互：指针指到哪根 = active；卡片贴着 active 刻度，松手 linger 后收回
 // ============================================
-let isInteracting = false
+let isInteracting = false   // 指针是否按下
 let hasCommittedDrag = false
 let pressY = 0
 let lastY = 0
-
-function cardYForPointer(clientY) {
-  return clientY - FINGER_OFFSET
-}
+let wasShownOnPress = false  // 按下瞬间卡片是否已展开（用于「点空白收回」）
 
 slider.addEventListener('pointerdown', e => {
   slider.setPointerCapture(e.pointerId)
+  ensureAudio()
   isInteracting = true
   hasCommittedDrag = e.pointerType === 'mouse'
   pressY = e.clientY
   lastY = e.clientY
+  wasShownOnPress = ctDest > 0.5            // 卡片此刻是否展开
   clearTimeout(hideTimer)
   slider.classList.add('is-scrubbing')
   if (hasCommittedDrag) setSel(selFromY(e.clientY))
-  cyDest = cardYForPointer(e.clientY)
+  cyDest = selY()                     // 卡片跟着手指连续位置（软弹簧 → 慢半拍拖拽感）
   showCard()
 })
 slider.addEventListener('pointermove', e => {
@@ -523,19 +531,21 @@ slider.addEventListener('pointermove', e => {
   lastY = e.clientY
   if (!hasCommittedDrag && Math.abs(e.clientY - pressY) >= DRAG_SLOP) hasCommittedDrag = true
   if (hasCommittedDrag) setSel(selFromY(e.clientY))     // 选中跟着指针
-  cyDest = cardYForPointer(e.clientY)     // 卡片避开一点手指
+  cyDest = selY()                     // 卡片连续跟手，弹簧带出 stagger 延迟
   startCardSpring()
 })
 function endInteract() {
   if (!isInteracting) return
   isInteracting = false
-  if (!hasCommittedDrag) setSel(selFromY(lastY)) // 轻点仍然可以选择，但不在按下瞬间误跳
   slider.classList.remove('is-scrubbing')
+  // 卡片已展开 + 这次只是轻点（没拖动）→ 点空白收回
+  if (wasShownOnPress && !hasCommittedDrag) { hideCard(); return }
+  if (!hasCommittedDrag) setSel(selFromY(lastY))   // 轻点也能选，但不在按下瞬间误跳
   setSel(activeIndex)             // 吸附到整刻度
-  commitNow()                     // 松手 → 立即提交清晰文字
-  cyDest = activeTickY() // 卡片对齐到选中刻度
+  commitNow()
+  cyDest = activeTickY()
   startCardSpring()
-  scheduleHide()
+  scheduleHide()                  // 松手 linger 后自动收回
 }
 slider.addEventListener('pointerup', endInteract)
 slider.addEventListener('pointercancel', endInteract)
@@ -547,6 +557,7 @@ const WHEEL_SEL = 0.012
 let wheelStopTimer = null
 slider.addEventListener('wheel', e => {
   e.preventDefault()
+  ensureAudio()
   clearTimeout(hideTimer)
   slider.classList.add('is-scrubbing')
   let d = e.deltaY
@@ -573,6 +584,7 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') dir = 1
   else return
   e.preventDefault()
+  ensureAudio()
   clearTimeout(hideTimer)
   slider.classList.add('is-scrubbing')
   setSel(clamp(activeIndex + dir, 0, N - 1))
@@ -599,27 +611,28 @@ activeIndex = 0
 sel = 0
 fillLayer(frontLayer, 0)
 frontLayer.classList.add('is-active')
-progressFill.style.width = '0%'
 cy = cyDest = activeTickY()
 applyCardGeom()
 drawTicks()
 </script>
 
-  <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"></button>
+  <button class="icon-btn" id="muteToggle" aria-label="Toggle sound"></button>
   <script>
     (function () {
-      const SUN = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>'
-      const MOON = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>'
-      const btn = document.getElementById('themeToggle')
-      function apply(light) {
-        document.body.classList.toggle('light', light)
-        btn.innerHTML = light ? SUN : MOON
-        try { localStorage.setItem('topics-theme', light ? 'light' : 'dark') } catch (e) {}
+      const ON  = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7 6.5 8.5H3v7h3.5L11 19.3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>'
+      const OFF = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7 6.5 8.5H3v7h3.5L11 19.3z"/><path d="m16 9 5 6"/><path d="m21 9-5 6"/></svg>'
+      const btn = document.getElementById('muteToggle')
+      function apply(muted) {
+        window.soundMuted = muted
+        btn.classList.toggle('is-off', muted)
+        btn.innerHTML = muted ? OFF : ON
+        btn.setAttribute('aria-pressed', String(muted))
+        try { localStorage.setItem('topics-muted', muted ? '1' : '0') } catch (e) {}
       }
       let saved = null
-      try { saved = localStorage.getItem('topics-theme') } catch (e) {}
-      apply(saved === 'light')   // 默认黑色，仅当手动选过浅色才用浅色
-      btn.addEventListener('click', function (e) { e.stopPropagation(); apply(!document.body.classList.contains('light')) })
+      try { saved = localStorage.getItem('topics-muted') } catch (e) {}
+      apply(saved === '1')   // 默认开声，仅当手动静音过才静音
+      btn.addEventListener('click', function (e) { e.stopPropagation(); apply(!window.soundMuted) })
     })()
   </script>
 </body>
