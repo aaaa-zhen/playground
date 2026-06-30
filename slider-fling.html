@@ -185,6 +185,7 @@ const DECEL = 0.992, LN_DECEL = Math.log(0.992)
 const RUBBER = 0.55
 const SB_LAMBDA = 2 * Math.PI / 0.575
 const V_END = 0.01
+const HANDOFF_V = 0.05      // 衰减减到此速度交给弹簧平滑收尾（消除落定顿挫）
 const V_MIN_FLING = 0.15
 const BOUNCE_DAMP = 0.45
 const MAX_POS = MAX_VALUE * TICK_SPACING
@@ -397,6 +398,11 @@ function animate(now) {
   pos = s.value
   if (anim.kind === 'decay' && anim.target == null && (pos < 0 || pos > MAX_POS)) {
     startAnim(springBackAnim(pos < 0 ? 0 : MAX_POS, s.vel * BOUNCE_DAMP))
+    return
+  }
+  // 衰减末段交给临界阻尼弹簧平滑贴到刻度，不再硬 snap（消除末尾抖动）
+  if (anim.kind === 'decay' && anim.target != null && Math.abs(s.vel) < HANDOFF_V) {
+    startAnim(springBackAnim(anim.target, s.vel))
     return
   }
   draw()
