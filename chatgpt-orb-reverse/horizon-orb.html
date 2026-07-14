@@ -1163,7 +1163,8 @@ const cvs = document.getElementById('c')
 const errBox = document.getElementById('err')
 // default alpha:true + premultipliedAlpha:true — pass 2 writes premultiplied
 // (color·shape, shape), so outside the orb the canvas is transparent page bg
-const gl = cvs.getContext('webgl2', { antialias: true })
+// high-performance → prefer the discrete GPU on dual-GPU machines
+const gl = cvs.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' })
 
 function fail(msg) { errBox.style.display = 'block'; errBox.textContent = msg; throw new Error(msg) }
 if (!gl) fail('WebGL2 not available')
@@ -1684,8 +1685,15 @@ function frame(now) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   const w = Math.round(cvs.clientWidth * dpr), h = Math.round(cvs.clientHeight * dpr)
   if (cvs.width !== w || cvs.height !== h) { cvs.width = w; cvs.height = h }
-  const side = Math.min(w, h)
-  ensureFbo(side)
+  // dispSide: composite runs at full device res (crisp SDF edge).
+  // matSide: the heavy Horizon material shader renders into a capped FBO — its
+  // output is a soft watercolor upscaled with LINEAR filtering, so dropping its
+  // resolution is nearly invisible but cuts the expensive noise/voronoi pixel
+  // count by ~4–6× on Retina. MAT_MAX is the perf/quality dial.
+  const MAT_MAX = 448
+  const dispSide = Math.min(w, h)
+  const matSide = Math.min(dispSide, MAT_MAX)
+  ensureFbo(matSide)
 
   // write UBO
   f32[OFF.waveFrame] = waveFrame
@@ -1701,9 +1709,9 @@ function frame(now) {
   gl.bindBuffer(gl.UNIFORM_BUFFER, ubo)
   gl.bufferSubData(gl.UNIFORM_BUFFER, 0, uboBuf)
 
-  // PASS 1: material → interior framebuffer
+  // PASS 1: material → interior framebuffer (capped resolution)
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
-  gl.viewport(0, 0, side, side)
+  gl.viewport(0, 0, matSide, matSide)
   gl.useProgram(progMat); bindMatAttribs()
   gl.disable(gl.BLEND)
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT)
@@ -1713,7 +1721,7 @@ function frame(now) {
   // Draw into a CENTERED SQUARE viewport (side×side): vSdfPosition is −1..1, so
   // a non-square canvas would otherwise stretch the circle into an ellipse.
   gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-  gl.viewport((w - side) / 2, (h - side) / 2, side, side)
+  gl.viewport((w - dispSide) / 2, (h - dispSide) / 2, dispSide, dispSide)
   gl.useProgram(progComp); bindCompAttribs()
   gl.uniform1f(CU.base, baseFrame)
   gl.uniform1f(CU.mic, snap.micLevel)
