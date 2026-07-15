@@ -15,27 +15,34 @@
   html,body{height:100%}
   body{
     background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    min-height:100dvh;overflow:hidden;-webkit-font-smoothing:antialiased;
+    display:flex;min-height:100dvh;overflow:hidden;
+    -webkit-font-smoothing:antialiased;
   }
 
-  /* stage — the orb composites with premultiplied alpha, so the canvas is transparent.
-     orb + panel center together as one group, so the controls sit right under the orb */
-  #stage{width:100%;display:flex;align-items:center;justify-content:center}
-  /* canvas is 1/0.72 larger than the orb (JELLY.baseScale) so the directional
-     stretch has room without clipping at the canvas edge */
-  canvas{width:min(79vmin,544px);height:min(79vmin,544px);display:block;
-    flex-shrink:0;cursor:grab;touch-action:none}
-  canvas:active{cursor:grabbing}
+  /* stage — the orb composites with premultiplied alpha, so the canvas is
+     transparent. It owns the full left side; the dock anchor near the canvas
+     bottom stays clear of any controls */
+  #stage{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}
+  /* the canvas fills the whole stage — the drawing surface IS the room, so
+     travel and stretch never hit a container edge; the composite pass
+     corrects the aspect so SDF units stay square (orb radius = h/4) */
+  canvas{width:100%;height:100%;display:block;
+    cursor:default;touch-action:none;overscroll-behavior:contain}
+  canvas.can-grab{cursor:grab}
+  canvas.dragging{cursor:grabbing}
 
-  /* control panel — swatch row + labeled option rows, right under the orb */
-  #panel{display:flex;flex-direction:column;gap:2px;width:min(64vmin,440px);
-    padding:22px 2px calc(18px + env(safe-area-inset-bottom))}
+  /* control panel — right sidebar, same structure as the NameDrop study */
+  #panel{width:272px;height:100dvh;overflow-y:auto;
+    display:flex;flex-direction:column;gap:2px;
+    border-left:1px solid var(--line);background:var(--panel);
+    padding:20px 18px calc(18px + env(safe-area-inset-bottom))}
+  #panel h2{font-size:13px;font-weight:600;margin-bottom:2px}
+  #panel .sub{font-size:11px;color:var(--ink-dim);margin-bottom:16px}
   .row{display:flex;align-items:center}
-  .row.pals{justify-content:space-between;margin-bottom:16px}
-  .row.opt{justify-content:space-between;gap:12px}
+  .row.pals{justify-content:space-between;margin-bottom:14px}
+  .row.opt{flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:10px}
   .lab{font-size:13px;font-weight:600;color:var(--ink)}
-  .opts{display:flex;align-items:center;gap:2px;flex-wrap:wrap;justify-content:flex-end}
+  .opts{display:flex;align-items:center;gap:2px;flex-wrap:wrap;justify-content:flex-start}
   .opts button{
     -webkit-appearance:none;appearance:none;cursor:pointer;
     font-family:var(--sans);font-size:13px;color:var(--ink-dim);
@@ -49,12 +56,12 @@
   /* palette swatches — the palette's own ramp, pale top → shadow bottom;
      selected ring picks up the palette's shadow color (set as --ring per button) */
   .pal{-webkit-appearance:none;appearance:none;cursor:pointer;
-    width:36px;height:36px;padding:0;border-radius:50%;border:none;transition:.15s}
+    width:28px;height:28px;padding:0;border-radius:50%;border:none;transition:.15s}
   .pal:hover{transform:scale(1.08)}
   .pal:active{transform:scale(.95)}
   .pal.on{box-shadow:0 0 0 3px var(--bg),0 0 0 5.5px var(--ring,var(--ink))}
 
-  .row.mic{justify-content:center;margin-top:16px}
+  .row.mic{justify-content:flex-start;margin-top:8px}
   label.chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;
     color:var(--ink-dim);user-select:none;cursor:pointer;transition:.15s}
   label.chk:hover{color:var(--ink)}
@@ -63,13 +70,30 @@
   /* tuning sliders — index.html .ad-prow aesthetic */
   .tune{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
     display:flex;flex-direction:column;gap:12px}
-  .srow{display:flex;align-items:center;gap:12px}
-  .srow label{font-size:13px;color:var(--ink-soft);flex:0 0 92px}
-  .srow input[type=range]{flex:1;accent-color:var(--ink);height:3px;cursor:pointer}
-  .srow .pv{font-family:var(--mono);font-size:12.5px;flex:0 0 40px;text-align:right;color:var(--ink)}
+  .srow{display:flex;align-items:center;gap:10px}
+  .srow label{font-size:12.5px;color:var(--ink-soft);flex:0 0 78px}
+  .srow input[type=range]{flex:1;min-width:0;accent-color:var(--ink);height:3px;cursor:pointer}
+  .srow .pv{font-family:var(--mono);font-size:12px;flex:0 0 36px;text-align:right;color:var(--ink)}
 
   #err{position:fixed;left:12px;right:12px;bottom:12px;background:rgba(180,30,20,.94);color:#fff;
     padding:10px 14px;border-radius:10px;font:12px var(--mono);white-space:pre-wrap;display:none}
+
+  /* narrow windows / phones — stack: stage on top, panel below, page scrolls */
+  @media (max-width:760px){
+    body{flex-direction:column;overflow-y:auto}
+    #stage{width:100%;flex:0 0 auto;height:58svh;
+      padding-top:max(6px,env(safe-area-inset-top))}
+    #panel{width:100%;height:auto;overflow:visible;
+      border-left:0;border-top:1px solid var(--line);
+      padding-left:max(18px,env(safe-area-inset-left));
+      padding-right:max(18px,env(safe-area-inset-right))}
+    .pal{width:38px;height:38px}
+    .opts button{min-height:44px;padding:9px 12px}
+    label.chk{min-height:44px}
+    .srow{min-height:44px}
+    .srow input[type=range]{height:28px}
+    .tune{gap:14px}
+  }
 </style>
 </head>
 <body>
@@ -77,6 +101,8 @@
 <div id="stage"><canvas id="c"></canvas></div>
 
 <div id="panel">
+  <h2>Horizon Orb</h2>
+  <div class="sub">拖拽揉捏 · 单弹簧 · 双锚点飞行</div>
   <div class="row pals" id="palettes"></div>
   <div class="row opt">
     <span class="lab">State</span>
@@ -86,33 +112,39 @@
       <button data-state="speak">Speaking</button>
     </div>
   </div>
+  <div class="row opt">
+    <span class="lab">入场</span>
+    <div class="opts">
+      <button id="flyState" type="button" aria-pressed="false">收回</button>
+    </div>
+  </div>
   <div class="row mic">
     <label class="chk"><input type="checkbox" id="mic"> Use microphone</label>
   </div>
   <div class="tune">
     <div class="srow">
       <label>Resistance</label>
-      <input id="sRes" type="range" min="0" max="100" value="95">
+      <input id="sRes" type="range" min="0" max="100" value="100">
       <span class="pv" id="vRes">95</span>
     </div>
     <div class="srow">
       <label>Stretch</label>
-      <input id="sStr" type="range" min="0" max="150" value="89">
+      <input id="sStr" type="range" min="0" max="150" value="70">
       <span class="pv" id="vStr">0.89</span>
     </div>
     <div class="srow">
       <label>Grow</label>
-      <input id="sGrow" type="range" min="0" max="90" value="20">
+      <input id="sGrow" type="range" min="0" max="90" value="15">
       <span class="pv" id="vGrow">0.20</span>
     </div>
     <div class="srow">
       <label>Stiffness <span style="color:var(--ink-dim)">k</span></label>
-      <input id="sStiff" type="range" min="80" max="1200" step="10" value="190">
+      <input id="sStiff" type="range" min="80" max="1200" step="10" value="250">
       <span class="pv" id="vStiff">190</span>
     </div>
     <div class="srow">
       <label>Damping <span style="color:var(--ink-dim)">ζ</span></label>
-      <input id="sDmp" type="range" min="0.30" max="1.30" step="0.02" value="0.86">
+      <input id="sDmp" type="range" min="0.30" max="1.30" step="0.02" value="0.62">
       <span class="pv" id="vDmp">0.86</span>
     </div>
   </div>
@@ -1044,6 +1076,9 @@ uniform vec4 uPreConnectionDotColor;
 uniform vec2 uJellyOffset;   // jelly drag vector, orb-radius units (custom)
 uniform float uJellyScale;   // base scale + press pop (custom)
 uniform float uJellyStretch; // directional stretch gain (custom)
+uniform float uJellyGrow;    // pull-driven swell, anchored with the stretch (custom)
+uniform vec2 uJellyTranslate; // rigid-body travel, square SDF units (custom)
+uniform float uAspect;       // canvas w/h — SDF x spans ±aspect, y ±1 (custom)
 
 out vec4 fragColor;
 
@@ -1092,14 +1127,19 @@ vec4 renderPreConnectionDot(vec2 sdfPosition, float frame) {
 
 void main() {
   float frame = uBaseShaderFrame;
+  // aspect-corrected square units: y spans -1..1, x spans -aspect..aspect,
+  // so the orb stays circular on the full-stage (non-square) canvas
+  vec2 sdfPosition = vec2(vSdfPosition.x * uAspect, vSdfPosition.y);
 
   if (uPreConnectionDotVisibility >= 1.0) {
-    fragColor = renderPreConnectionDot(vSdfPosition, frame);
+    fragColor = renderPreConnectionDot(sdfPosition, frame);
     return;
   }
 
   float orbScale = horizonOrbScale(frame) * uJellyScale;
-  vec2 scaledSdfPosition = vSdfPosition / orbScale;
+  // rigid-body travel: part of the drag/rebound renders as real displacement
+  // (like the reference's translate3d cards), the rest as deformation below
+  vec2 scaledSdfPosition = (sdfPosition - uJellyTranslate) / orbScale;
 
   // ---- jelly warp (custom) -------------------------------------------------
   // iOS pull-to-search-style directional stretch: the whole orb elongates
@@ -1114,8 +1154,11 @@ void main() {
     float along  = dot(scaledSdfPosition, jellyDir);
     float across = dot(scaledSdfPosition, jellyPerp);
     float stretch = jellyMag * uJellyStretch;    // elongation along the drag axis
-    float sAlong  = 1.0 + stretch;
-    float sAcross = 1.0 - stretch * 0.55;        // perpendicular squash (volume feel)
+    // grow shares the SAME anchored transform as the stretch: the pivot is
+    // the rest-circle pole opposite the drag (drag up -> bottom edge fixed),
+    // so neither the swell nor the elongation leaks out the trailing side.
+    float sAlong  = (1.0 + stretch) * uJellyGrow;
+    float sAcross = (1.0 - stretch * 0.55) * uJellyGrow;
     along  = (along + 1.0) / sAlong - 1.0;       // trailing pole stays anchored
     across = across / sAcross;
     float side = smoothstep(-1.25, 1.25, along); // soft extra pull on the leading tip
@@ -1161,6 +1204,20 @@ void main() {
 // === WebGL boot ==============================================================
 const cvs = document.getElementById('c')
 const errBox = document.getElementById('err')
+let webglContextLost = false
+
+// Stop submitting commands while the context is unavailable. All WebGL
+// resources in this standalone demo are created during page initialization,
+// so a successful restore reloads the document and rebuilds them cleanly.
+cvs.addEventListener('webglcontextlost', e => {
+  e.preventDefault()
+  webglContextLost = true
+  errBox.style.display = 'block'
+  errBox.textContent = 'WebGL context lost. Waiting for the browser to restore it…'
+})
+cvs.addEventListener('webglcontextrestored', () => {
+  window.location.reload()
+})
 // default alpha:true + premultipliedAlpha:true — pass 2 writes premultiplied
 // (color·shape, shape), so outside the orb the canvas is transparent page bg
 // high-performance → prefer the discrete GPU on dual-GPU machines
@@ -1262,6 +1319,9 @@ function ensureFbo(size) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, interiorTex, 0)
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER)
+  if (status !== gl.FRAMEBUFFER_COMPLETE)
+    fail('framebuffer: incomplete (0x' + status.toString(16) + ')')
   gl.bindFramebuffer(gl.FRAMEBUFFER, null)
 }
 
@@ -1278,6 +1338,9 @@ const CU = {
   jOff:    gl.getUniformLocation(progComp, 'uJellyOffset'),
   jScale:  gl.getUniformLocation(progComp, 'uJellyScale'),
   jStretch: gl.getUniformLocation(progComp, 'uJellyStretch'),
+  jGrow:   gl.getUniformLocation(progComp, 'uJellyGrow'),
+  jTrans:  gl.getUniformLocation(progComp, 'uJellyTranslate'),
+  aspect:  gl.getUniformLocation(progComp, 'uAspect'),
 }
 
 // === state machine — 1:1 port of the bundle's "We" class =====================
@@ -1468,26 +1531,55 @@ document.querySelectorAll('#states button').forEach(b => b.onclick = () => {
 
 // === optional real microphone ================================================
 let useMic = false, analyser = null, freq = null
-document.getElementById('mic').onchange = async e => {
-  useMic = e.target.checked
-  if (useMic && !analyser) {
+let micStream = null, audioContext = null
+
+async function stopMicrophone() {
+  useMic = false
+  if (micStream) micStream.getTracks().forEach(track => track.stop())
+  micStream = null
+  analyser = null
+  freq = null
+  const context = audioContext
+  audioContext = null
+  if (context && context.state !== 'closed') {
+    try { await context.close() } catch (_) {}
+  }
+}
+
+const micCheckbox = document.getElementById('mic')
+micCheckbox.onchange = async e => {
+  if (!e.target.checked) {
+    await stopMicrophone()
+    return
+  }
+
+  useMic = true
+  if (!analyser) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const ac = new (window.AudioContext || window.webkitAudioContext)()
-      analyser = ac.createAnalyser()
+      // Permission may resolve after the user has already unchecked the box.
+      if (!micCheckbox.checked) {
+        stream.getTracks().forEach(track => track.stop())
+        useMic = false
+        return
+      }
+      micStream = stream
+      audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      analyser = audioContext.createAnalyser()
       analyser.fftSize = 2048
       analyser.smoothingTimeConstant = .8
       analyser.minDecibels = -100
       analyser.maxDecibels = -80
-      ac.createMediaStreamSource(stream).connect(analyser)
+      audioContext.createMediaStreamSource(stream).connect(analyser)
       freq = new Float32Array(analyser.frequencyBinCount)
     } catch (err) {
-      document.getElementById('mic').checked = false
-      useMic = false
+      micCheckbox.checked = false
+      await stopMicrophone()
       alert('Microphone: ' + err.message)
     }
   }
 }
+window.addEventListener('pagehide', () => { void stopMicrophone() })
 
 // === jelly drag — iOS pull-to-search interaction model =======================
 // Ported from -[SBHHomePullToSearchSettings setDefaultValues] (iOS 26.3
@@ -1499,75 +1591,145 @@ document.getElementById('mic').onchange = async e => {
 //   • velocity hands over between the two phases for free (same spring state)
 // Drag target uses the iOS scroll rubber band (FluidRubberBand.kt):
 //   offset(d) = (1 − 1 / (d/range·c + 1)) · range
+// =============================================================================
+// jelly interaction — 2D kneading (spring-circle.html model, generalized):
+// the orb's CENTER chases a resisted 2D hand target on ONE spring; drag and
+// release share the same k/ζ, so the throw's velocity carries continuously.
+// Deformation = displacement-from-anchor + velocity, along the motion axis
+// (the shader anchors the trailing edge, i.e. the side facing the anchor).
+// =============================================================================
 const JELLY = {
-  baseScale: .50,        // idle orb scale — smaller at rest → bigger pull contrast
-  range: .20,            // rubber-band range (asymptote), orb-radius units
-  coeff: .32,            // rubber coefficient — lower = heavier (iOS scroll stock: .55)
-  trackingResponse: .08, // while dragging — Apple: trackingResponse = 0.08
-  trackingDamping:  .92, // while dragging — Apple: trackingDampingRatio = 0.92
-  settleStiffness:  190, // release spring stiffness k (chenglou / index.html model)
-  settleDamping:    .86, // release spring damping ratio ζ (b = 2ζ√k); <1 = jelly bounce
+  baseScale: .50,        // orb scale at 'home' — canvas half-side = 1/baseScale radii
+  dragFollowRatio: .70,  // fraction of hand movement followed; UI resistance is its inverse
+  settleStiffness: 250,  // the ONE spring's k (slider)
+  settleDamping:   .62,  // its damping ratio ζ (slider)
+  scaleK: 260, scaleDamping: .95, // size spring between anchors
+  stretchPull:     .35,  // deformation per orb radius of displacement-from-anchor
+  stretchVel:      .50,  // deformation per orb radius of v/ω (velocity lead)
+  stretchCap:      .38,  // deformation magnitude ceiling, orb-radius units
+  holdFade:        .12,  // s — the sustained (displacement) term fades in/out on
+                         // grab/release instead of fighting the velocity term
+  anchorGlide:     .15,  // s — the deformation's anchor reference GLIDES to the
+                         // new anchor on commit, so the stretch morphs gradually
+                         // instead of snapping round mid-transition
+  commitPull:      .48,  // hand progress (SDF) toward the other anchor that commits
+  bounds: { marginX: .45, yLo: -.72, yHi: .5 }, // drag target clamp: x stays
+                         // marginX inside the stage edge (±aspect), y fixed
   pop: 1.02,             // press pop scale
-  grow: .20,             // pull-driven whole-base growth — small at rest, swells on drag
-  diagPenalty: .35,      // 45° drags get a shorter rubber range — axes pull easiest
-  stretchGain: .72,      // shader directional-stretch gain (slider-controlled)
+  grow: .20,             // deformation-driven swell (slider)
+  stretchGain: .72,      // shader directional-stretch gain (slider)
+}
+const ANCHORS = {
+  home: { x: 0, y: 0, scale: .85 },     // center — full form, kept a bit shy of max
+  dock: { x: 0, y: -.72, scale: .45 },  // near canvas bottom, small (ChatGPT entry)
 }
 const jelly = {
-  x: 0, y: 0, vx: 0, vy: 0,   // spring state, orb-radius units
-  tx: 0, ty: 0,               // rubber-banded drag target
-  sx: 0, sy: 0,               // virtual press origin (px)
-  dragging: false,
-  pop: 1, vPop: 0,   // press-pop spring (small, its own timeline)
-  scale: 1, acc: 0,  // scale = pop × (1 + grow·pull), derived each frame
-}
-// diagonal drags feel harder: the rubber range shrinks toward 45° (2·|ux·uy|
-// is 0 on the axes, 1 at 45°) — the omnidirectional stand-in for iOS treating
-// pull-to-search as an axis gesture and ignoring the cross component
-const effRange = (ux, uy) => JELLY.range * (1 - JELLY.diagPenalty * 2 * Math.abs(ux * uy))
-const rubberOffset = (d, range) => (1 - 1 / (d / range * JELLY.coeff + 1)) * range
-const rubberDistance = (off, range) => {  // inverse (FluidRubberBand.distance)
-  const o = Math.min(off, range - 1e-5)
-  return (range * o / (range - o)) / JELLY.coeff
+  x: 0, y: 0, vx: 0, vy: 0,   // center position spring, canvas SDF units
+  s: 1, vs: 0,                // size spring
+  tx: 0, ty: 0,               // drag target (SDF)
+  at: 'home',
+  pointerId: null,             // the sole pointer allowed to own this drag
+  dragging: null,             // {dx, dy} grab offset (SDF) while dragging
+  pop: 1, vPop: 0, acc: 0,
+  defx: 0, defy: 0,           // deformation vector for the shader, orb-radius units
+  ax: 0, ay: 0,               // smoothed anchor reference for the deformation
+  hold: 0,                    // sustained-stretch weight, 1 while held, fades out
+  grow: 1,
 }
 
-cvs.addEventListener('pointerdown', e => {
-  jelly.dragging = true
+// pointer → square SDF units (y ±1, x ±aspect on the full-stage canvas)
+function handSdf(e) {
   const rect = cvs.getBoundingClientRect()
-  const off = Math.hypot(jelly.x, jelly.y)
-  if (off > 1e-4) {
-    // re-grab mid-motion without a jump: place the virtual press origin so the
-    // current offset maps back through the rubber-band inverse
-    const d = rubberDistance(off, effRange(jelly.x / off, jelly.y / off))
-    jelly.sx = e.clientX - (jelly.x / off) * d * (rect.width / 2) * JELLY.baseScale
-    jelly.sy = e.clientY + (jelly.y / off) * d * (rect.height / 2) * JELLY.baseScale
-  } else {
-    jelly.sx = e.clientX; jelly.sy = e.clientY
+  const aspect = rect.width / rect.height
+  return {
+    x: (((e.clientX - rect.left) / rect.width) * 2 - 1) * aspect,
+    y: -(((e.clientY - rect.top) / rect.height) * 2 - 1),
+    aspect,
   }
+}
+
+function orbHitRadius(pointerType = 'mouse') {
+  const radius = JELLY.baseScale * jelly.pop * jelly.s * jelly.grow
+  const deformation = 1 + Math.hypot(jelly.defx, jelly.defy) * JELLY.stretchGain
+  return radius * deformation + (pointerType === 'touch' ? .06 : .025)
+}
+
+function hitTestOrb(hand, pointerType = 'mouse') {
+  return Math.hypot(hand.x - jelly.x, hand.y - jelly.y) <= orbHitRadius(pointerType)
+}
+
+cvs.addEventListener('pointermove', e => {
+  if (jelly.pointerId !== null) return
+  cvs.classList.toggle('can-grab', hitTestOrb(handSdf(e), e.pointerType))
+})
+cvs.addEventListener('pointerleave', () => {
+  if (jelly.pointerId === null) cvs.classList.remove('can-grab')
+})
+
+cvs.addEventListener('pointerdown', e => {
+  if (jelly.pointerId !== null) return
+  const hand = handSdf(e)
+  if (!hitTestOrb(hand, e.pointerType)) return
+  e.preventDefault()
+  jelly.pointerId = e.pointerId
+  jelly.dragging = { dx: hand.x - jelly.x, dy: hand.y - jelly.y }
   jelly.tx = jelly.x; jelly.ty = jelly.y
+  cvs.classList.remove('can-grab')
+  cvs.classList.add('dragging')
   try { cvs.setPointerCapture(e.pointerId) } catch (_) {}
 })
 
 // move/up/cancel live on WINDOW so a release anywhere ends the drag —
 // same missed-pointerup fix as index.html
 window.addEventListener('pointermove', e => {
-  if (!jelly.dragging) return
-  if (e.buttons === 0) { jellyRelease(); return }  // button already up → the up event was missed
-  const rect = cvs.getBoundingClientRect()
-  // pointer delta → orb-radius units (y up), pre-divided by the base scale
-  const dx = (e.clientX - jelly.sx) / (rect.width / 2) / JELLY.baseScale
-  const dy = -(e.clientY - jelly.sy) / (rect.height / 2) / JELLY.baseScale
-  const d = Math.hypot(dx, dy)
-  if (d < 1e-5) { jelly.tx = 0; jelly.ty = 0 }
-  else {
-    const ux = dx / d, uy = dy / d
-    const off = rubberOffset(d, effRange(ux, uy))
-    jelly.tx = ux * off; jelly.ty = uy * off
+  if (!jelly.dragging || e.pointerId !== jelly.pointerId) return
+  if (e.pointerType === 'mouse' && e.buttons === 0) { jellyRelease(e); return }
+  const hand = handSdf(e)
+  const rawX = hand.x - jelly.dragging.dx
+  const rawY = hand.y - jelly.dragging.dy
+  const anchor = ANCHORS[jelly.at]
+  const other = jelly.at === 'home' ? 'dock' : 'home'
+  // commit: the hand progressed far enough toward the other anchor → the drag
+  // ends and the orb flies over, velocity carrying (no 50% midpoint rule)
+  const axisX = ANCHORS[other].x - anchor.x
+  const axisY = ANCHORS[other].y - anchor.y
+  const axisLen = Math.hypot(axisX, axisY)
+  const progress = ((rawX - anchor.x) * axisX + (rawY - anchor.y) * axisY) / axisLen
+  if (progress > JELLY.commitPull) {
+    setFlightAt(other)
+    jellyRelease()
+    return
   }
+  // The target follows a fraction of the hand's pull from the anchor. The UI
+  // exposes the inverse concept: more Resistance means a lower follow ratio.
+  jelly.tx = anchor.x + (rawX - anchor.x) * JELLY.dragFollowRatio
+  jelly.ty = anchor.y + (rawY - anchor.y) * JELLY.dragFollowRatio
+  const xLimit = Math.max(hand.aspect - JELLY.bounds.marginX, 0.3)
+  jelly.tx = Math.max(-xLimit, Math.min(xLimit, jelly.tx))
+  jelly.ty = Math.max(JELLY.bounds.yLo, Math.min(JELLY.bounds.yHi, jelly.ty))
 })
-function jellyRelease() { jelly.dragging = false }   // target snaps home; the spring keeps its velocity
+// the SAME spring keeps running toward the anchor with its velocity — the
+// hand-off is continuous: no parameter switch, no injection (the spring
+// chased the hand during the drag, so it already carries the throw)
+function jellyRelease(e) {
+  if (e?.pointerId != null && e.pointerId !== jelly.pointerId) return
+  jelly.dragging = null
+  jelly.pointerId = null
+  cvs.classList.remove('dragging', 'can-grab')
+}
 window.addEventListener('pointerup', jellyRelease)
 window.addEventListener('pointercancel', jellyRelease)
-window.addEventListener('blur', jellyRelease)
+window.addEventListener('blur', () => jellyRelease())
+
+const flyButton = document.getElementById('flyState')
+function setFlightAt(at) {
+  jelly.at = at
+  flyButton.textContent = at === 'home' ? '收回' : '召出'
+  flyButton.setAttribute('aria-pressed', String(at === 'dock'))
+}
+flyButton.addEventListener('click', () => {
+  setFlightAt(jelly.at === 'home' ? 'dock' : 'home')
+})
 
 // tuning sliders — Resistance (higher = heavier drag → lower rubber coeff) and
 // Stretch (shader directional-stretch gain)
@@ -1575,7 +1737,7 @@ const sRes = document.getElementById('sRes'), vRes = document.getElementById('vR
 const sStr = document.getElementById('sStr'), vStr = document.getElementById('vStr')
 function onRes() {
   const r = +sRes.value                       // 0..100, right = heavier
-  JELLY.coeff = 0.6 - (r / 100) * 0.48        // 0.6 (light) → 0.12 (heavy)
+  JELLY.dragFollowRatio = 1 - (r / 100) * 0.72 // 1.0 (free) → 0.28 (heavy)
   vRes.textContent = r
 }
 function onStr() {
@@ -1611,6 +1773,10 @@ let waveFrame = 1, baseFrame = 1, flowFrame = 1
 let last = performance.now()
 
 function frame(now) {
+  if (webglContextLost) {
+    requestAnimationFrame(frame)
+    return
+  }
   const dt = Math.min((now - last) / 1000, 1 / 24)
   last = now
 
@@ -1652,47 +1818,64 @@ function frame(now) {
   {
     // dragging → Apple's tight tracking spring (response-based); released →
     // chenglou's spring parameterized by stiffness k + damping ratio ζ
-    let jk, jc
-    if (jelly.dragging) {
-      const w = 2 * Math.PI / JELLY.trackingResponse
-      jk = w * w; jc = 2 * JELLY.trackingDamping * w
-    } else {
-      jk = JELLY.settleStiffness; jc = 2 * JELLY.settleDamping * Math.sqrt(jk)
-    }
-    const gx = jelly.dragging ? jelly.tx : 0
-    const gy = jelly.dragging ? jelly.ty : 0
+    // ONE continuous 2D spring: chases the resisted hand target while dragging,
+    // then the current anchor — same k/ζ throughout, velocity carries across
+    const jk = JELLY.settleStiffness
+    const jc = 2 * JELLY.settleDamping * Math.sqrt(jk)
+    const sk = JELLY.scaleK, sc = 2 * JELLY.scaleDamping * Math.sqrt(sk)
+    const anchor = ANCHORS[jelly.at]
+    const gx = jelly.dragging ? jelly.tx : anchor.x
+    const gy = jelly.dragging ? jelly.ty : anchor.y
     jelly.acc += dt
     while (jelly.acc >= .004) {
       jelly.acc -= .004
       jelly.vx += (jk * (gx - jelly.x) - jc * jelly.vx) * .004; jelly.x += jelly.vx * .004
       jelly.vy += (jk * (gy - jelly.y) - jc * jelly.vy) * .004; jelly.y += jelly.vy * .004
-      // press pop only — a tiny, quick separate spring (k = 500, critical)
+      jelly.vs += (sk * (anchor.scale - jelly.s) - sc * jelly.vs) * .004; jelly.s += jelly.vs * .004
+      // deformation continuity: the anchor reference glides (no snap on
+      // commit) and the sustained term fades on grab/release
+      jelly.ax += (anchor.x - jelly.ax) * .004 / JELLY.anchorGlide
+      jelly.ay += (anchor.y - jelly.ay) * .004 / JELLY.anchorGlide
+      jelly.hold += ((jelly.dragging ? 1 : 0) - jelly.hold) * .004 / JELLY.holdFade
+      // press pop — a tiny, quick separate spring (k = 500, critical)
       const popDest = jelly.dragging ? JELLY.pop : 1
       jelly.vPop += (-500 * (jelly.pop - popDest) - 44.72 * jelly.vPop) * .004
       jelly.pop += jelly.vPop * .004
     }
-    // grow follows the LIVE (spring-driven) offset, so on release it shrinks on
-    // the SAME settle spring as the position — wobble and all, one timeline
-    const pull = Math.min(Math.hypot(jelly.x, jelly.y) / JELLY.range, 1)
-    jelly.scale = jelly.pop * (1 + JELLY.grow * pull)
-  }
-  { // a hard fling can overshoot outward — keep the lobe inside the canvas margin
-    const jm = Math.hypot(jelly.x, jelly.y)
-    if (jm > JELLY.range) { jelly.x *= JELLY.range / jm; jelly.y *= JELLY.range / jm }
+    // deformation vector, orb-radius units: sustained displacement-from-anchor
+    // (held drags stay stretched, trailing edge toward the anchor) plus v/ω
+    // (motion squash that stays alive through crossings), capped
+    const radius = Math.max(JELLY.baseScale * jelly.s, 1e-4)
+    const lead = 1 / Math.sqrt(jk)
+    let defx = ((jelly.x - jelly.ax) * JELLY.stretchPull * jelly.hold
+              + jelly.vx * lead * JELLY.stretchVel) / radius
+    let defy = ((jelly.y - jelly.ay) * JELLY.stretchPull * jelly.hold
+              + jelly.vy * lead * JELLY.stretchVel) / radius
+    const defMag = Math.hypot(defx, defy)
+    if (defMag > JELLY.stretchCap) {
+      defx *= JELLY.stretchCap / defMag
+      defy *= JELLY.stretchCap / defMag
+    }
+    jelly.defx = defx; jelly.defy = defy
+    jelly.grow = 1 + JELLY.grow * Math.min(Math.hypot(defx, defy) / JELLY.stretchCap, 1)
   }
 
   // resize (dpr capped at 2)
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   const w = Math.round(cvs.clientWidth * dpr), h = Math.round(cvs.clientHeight * dpr)
+  if (w <= 0 || h <= 0) {
+    jelly.acc = 0
+    requestAnimationFrame(frame)
+    return
+  }
   if (cvs.width !== w || cvs.height !== h) { cvs.width = w; cvs.height = h }
-  // dispSide: composite runs at full device res (crisp SDF edge).
+  // composite runs at full device res (crisp SDF edge).
   // matSide: the heavy Horizon material shader renders into a capped FBO — its
   // output is a soft watercolor upscaled with LINEAR filtering, so dropping its
   // resolution is nearly invisible but cuts the expensive noise/voronoi pixel
   // count by ~4–6× on Retina. MAT_MAX is the perf/quality dial.
   const MAT_MAX = 448
-  const dispSide = Math.min(w, h)
-  const matSide = Math.min(dispSide, MAT_MAX)
+  const matSide = Math.min(Math.min(w, h), MAT_MAX)
   ensureFbo(matSide)
 
   // write UBO
@@ -1718,11 +1901,13 @@ function frame(now) {
   gl.drawArrays(gl.TRIANGLES, 0, 6)
 
   // PASS 2: composite the interior into an SDF circle → screen.
-  // Draw into a CENTERED SQUARE viewport (side×side): vSdfPosition is −1..1, so
-  // a non-square canvas would otherwise stretch the circle into an ellipse.
+  // Full-canvas viewport: the shader multiplies vSdfPosition.x by uAspect so
+  // SDF units stay square (y spans ±1, x spans ±aspect) and the whole stage
+  // is drawable — no invisible container edge to clip travel or stretch.
   gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-  gl.viewport((w - dispSide) / 2, (h - dispSide) / 2, dispSide, dispSide)
+  gl.viewport(0, 0, w, h)
   gl.useProgram(progComp); bindCompAttribs()
+  gl.uniform1f(CU.aspect, w / h)
   gl.uniform1f(CU.base, baseFrame)
   gl.uniform1f(CU.mic, snap.micLevel)
   gl.uniform1f(CU.usr, snap.userSpeakingScale)
@@ -1730,9 +1915,11 @@ function frame(now) {
   gl.uniform1f(CU.dotVis, 0.0)   // pre-connection dot hidden
   const dot = PAL_INFO[paletteIndex].dot
   gl.uniform4f(CU.dotCol, dot[0], dot[1], dot[2], 1.0)
-  gl.uniform2f(CU.jOff, jelly.x, jelly.y)
-  gl.uniform1f(CU.jScale, JELLY.baseScale * jelly.scale)
+  gl.uniform2f(CU.jOff, jelly.defx, jelly.defy)
+  gl.uniform1f(CU.jScale, JELLY.baseScale * jelly.pop * jelly.s)
   gl.uniform1f(CU.jStretch, JELLY.stretchGain)
+  gl.uniform1f(CU.jGrow, jelly.grow)
+  gl.uniform2f(CU.jTrans, jelly.x, jelly.y)
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, interiorTex)
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT)
