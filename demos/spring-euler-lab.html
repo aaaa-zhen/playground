@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>Spring Physics</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+<style>
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e6e6e6; --bg:#ffffff; --stage:#ffffff; --panel:#f7f7f8;
+    --blue:#3478f6; --orange:#ff8a34; --green:#34c759; --yellow:#ffd23f;
+    --red:#ff453a; --purple:#af52de;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+    --r-card:28px; --r-box:18px; --r-chip:12px; --r-tag:7px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:18px;line-height:1.9;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  button,input{font:inherit}
+  button{color:inherit}
+  ::selection{background:#dce8ff;color:var(--ink)}
+  .doc{max-width:680px;margin:0 auto;padding:72px 28px 120px}
+
+  h1{font-size:34px;font-weight:700;line-height:1.35;letter-spacing:-.01em;margin-bottom:8px}
+  .sub{font-size:16px;color:var(--ink-dim);margin-bottom:44px;line-height:1.7}
+  h2{font-size:23px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+  h3{font-size:16px;line-height:1.45;margin:0 0 8px}
+  p{overflow-wrap:break-word}
+  code{font-family:var(--mono)}
+  .act-label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);letter-spacing:.05em;margin:68px 0 6px}
+  .act-label.first{margin-top:34px}
+  .demo-sub{font-size:15px;color:var(--ink-dim);margin:0 0 20px;line-height:1.65}
+  .body-copy{font-size:15px;color:var(--ink-soft);line-height:1.78;margin:0 0 18px}
+
+  /* The same quiet stage language used by index.html. */
+  .stage-card{background:var(--stage);border-radius:var(--r-card);padding:18px 18px 22px;overflow:visible}
+  .cap{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.04em;padding:4px 8px 14px;display:block}
+  .controls{display:flex;align-items:center;gap:8px;margin-top:14px;min-width:0}
+  .ad-label{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ad-label b{color:var(--ink);font-weight:650}
+  .ad-replay{margin-left:auto;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+    color:var(--ink-soft);background:var(--panel);border:1px solid var(--line);border-radius:50%;cursor:pointer;
+    transition:.15s;flex:0 0 auto}
+  .ad-replay:hover{background:#e6e6e8;color:var(--ink)}
+  .ad-replay:active{transform:rotate(-40deg)}
+  .ad-replay svg{width:16px;height:16px;display:block}
+  .mini-btn{height:34px;padding:0 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel);
+    color:var(--ink-dim);font:600 10px/1 var(--mono);letter-spacing:.02em;cursor:pointer;transition:.15s;white-space:nowrap}
+  .mini-btn:hover{background:#ececee;color:var(--ink)}
+  .mini-btn.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .mini-btn.hot{animation:hotFrame .35s ease-out}
+  @keyframes hotFrame{50%{background:var(--orange);border-color:var(--orange);color:#fff}}
+
+  .ad-params{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:14px}
+  .ad-pgroup{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.04em;margin:0 0 12px;text-transform:uppercase}
+  .ad-pgroup.gap{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+  .ad-prow{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .ad-prow:last-child{margin-bottom:0}
+  .ad-prow label{font-size:13px;color:var(--ink-soft);flex:0 0 150px}
+  .ad-prow label .k{font-family:var(--mono);color:var(--ink-dim);font-size:12px}
+  .ad-prow input[type=range]{flex:1;accent-color:var(--ink);height:3px;cursor:pointer;min-width:0}
+  .ad-prow .pv{font-family:var(--mono);font-size:12.5px;flex:0 0 56px;text-align:right;color:var(--ink)}
+  .preset-row{display:flex;flex-wrap:wrap;gap:7px}
+  .preset{padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink-dim);
+    font:600 10.5px/1 var(--mono);cursor:pointer;transition:.15s}
+  .preset:hover,.preset.on{color:#fff;background:var(--ink);border-color:var(--ink)}
+  .conversion{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);
+    border-radius:11px;overflow:hidden;margin-top:14px}
+  .conversion>div{background:#fff;padding:11px 13px}
+  .conversion span{display:block;font:10px/1 var(--mono);color:var(--ink-dim);letter-spacing:.03em}
+  .conversion b{display:block;margin-top:7px;font:650 14px/1 var(--mono);font-variant-numeric:tabular-nums}
+
+  /* DEMO 01 — a throwable spring toy. */
+  #playStage{position:relative;width:100%;height:clamp(430px,64vh,560px);border-radius:var(--r-box);
+    background:
+      radial-gradient(circle at 50% 50%,rgba(0,0,0,.025),transparent 42%),
+      linear-gradient(#f2f2f3 1px,transparent 1px),linear-gradient(90deg,#f2f2f3 1px,transparent 1px);
+    background-size:auto,32px 32px,32px 32px;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;cursor:crosshair}
+  #playStage.dragging{cursor:grabbing}
+  #tetherSvg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+  #tetherPath{fill:none;stroke:#d8d8da;stroke-width:2;stroke-linecap:round;stroke-dasharray:2 6}
+  #anchor{position:absolute;left:0;top:0;width:38px;height:38px;border:1px solid #d8d8da;border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;will-change:transform,left,top}
+  #anchor::before{content:"";position:absolute;left:50%;top:50%;width:7px;height:7px;border-radius:50%;background:var(--ink);transform:translate(-50%,-50%)}
+  #anchor::after{content:"HOME";position:absolute;left:50%;top:48px;transform:translateX(-50%);color:var(--ink-dim);font:9px/1 var(--mono);letter-spacing:.05em}
+  #anchor.pulse{animation:anchorPulse .38s ease-out}
+  @keyframes anchorPulse{50%{box-shadow:0 0 0 12px rgba(52,120,246,.1);border-color:var(--blue)}}
+  .trail-dot{position:absolute;left:0;top:0;width:18px;height:18px;border-radius:6px;pointer-events:none;opacity:0;
+    transform:translate(-50%,-50%);will-change:transform,opacity;transition:opacity .22s ease}
+  .trail-dot:nth-child(4n+1){background:var(--blue)}
+  .trail-dot:nth-child(4n+2){background:var(--green)}
+  .trail-dot:nth-child(4n+3){background:var(--yellow)}
+  .trail-dot:nth-child(4n){background:var(--red)}
+  #springToy,#frameGhost{position:absolute;left:0;top:0;width:82px;height:82px;border-radius:24px;will-change:transform;transform-origin:center;
+    transform:translate3d(-200px,-200px,0);-webkit-tap-highlight-color:transparent}
+  #springToy{z-index:4;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.07),0 18px 40px rgba(0,0,0,.16);cursor:grab;outline:none}
+  #springToy:focus-visible{box-shadow:0 0 0 3px rgba(52,120,246,.28),0 18px 40px rgba(0,0,0,.16)}
+  #springToy.grabbed{cursor:grabbing;box-shadow:0 5px 12px rgba(0,0,0,.08),0 28px 55px rgba(0,0,0,.2)}
+  .toy-grid{position:absolute;inset:13px;display:grid;grid-template-columns:1fr 1fr;gap:6px;pointer-events:none}
+  .toy-grid i{display:block;border-radius:10px}
+  .toy-grid i:nth-child(1){background:var(--red)} .toy-grid i:nth-child(2){background:#ff9f0a}
+  .toy-grid i:nth-child(3){background:var(--green)} .toy-grid i:nth-child(4){background:var(--blue)}
+  #frameGhost{z-index:3;border:2px solid var(--orange);background:rgba(255,138,52,.08);opacity:0;pointer-events:none;transition:opacity .2s}
+  #frameGhost.show{opacity:.62}
+  #frameGhost::after{content:"FRAME Δt";position:absolute;left:50%;top:91px;transform:translateX(-50%);white-space:nowrap;
+    color:var(--orange);font:700 9px/1 var(--mono);letter-spacing:.04em}
+  #gestureHint{position:absolute;left:50%;top:38px;transform:translateX(-50%);width:90%;text-align:center;
+    color:var(--ink-dim);font-size:13px;line-height:1.7;pointer-events:none;transition:opacity .35s}
+  #frameFlash{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;box-shadow:inset 0 0 0 2px var(--orange)}
+  #frameFlash.go{animation:frameFlash .4s ease-out}
+  @keyframes frameFlash{0%{opacity:0}35%{opacity:1}100%{opacity:0}}
+  .energy{height:3px;margin-top:10px;border-radius:3px;background:#eee;overflow:hidden}
+  #energyBar{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--blue),var(--purple),var(--red));transition:width .08s linear}
+
+  /* Research blocks — kept deliberately document-like. */
+  .note-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+  .note-card{min-height:170px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+  .note-kicker{font:700 10px/1 var(--mono);color:var(--ink-dim);letter-spacing:.04em;margin-bottom:18px}
+  .note-card p{font-size:13.5px;color:var(--ink-dim);line-height:1.65}
+  .formula{margin-top:18px;padding-top:13px;border-top:1px solid var(--line);font:600 14px/1.55 var(--mono);white-space:nowrap}
+  .formula .blue{color:var(--blue)} .formula .orange{color:#e86612}
+  .callout{padding:18px 20px;border-left:3px solid var(--ink);background:var(--panel);font-size:14px;color:var(--ink-soft);line-height:1.75;margin:20px 0}
+
+  .codebox{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden;margin:20px 0}
+  .codehead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--line);
+    color:var(--ink-dim);font:10.5px/1 var(--mono);letter-spacing:.04em}
+  .copy-btn{border:0;background:none;color:var(--ink-dim);font:700 10px/1 var(--mono);cursor:pointer;padding:4px}
+  .copy-btn:hover{color:var(--ink)}
+  pre{padding:17px 18px;overflow:auto;font:12.5px/1.8 var(--mono);tab-size:2;color:var(--ink-soft)}
+  .cm{color:#a0a0a4}.kw{color:#286fe2}.hi{color:#df6519}
+
+  /* DEMO 02 — manually advance one integration step. */
+  #stepStage{position:relative;height:190px;border-radius:var(--r-box);background:var(--panel);overflow:hidden;-webkit-user-select:none;user-select:none}
+  .step-track{position:absolute;left:34px;right:34px;top:96px;height:1px;background:#d9d9dc}
+  .step-target{position:absolute;left:82%;top:54px;width:1px;height:84px;background:#c7c7ca}
+  .step-target::before{content:"DEST";position:absolute;top:-17px;left:50%;transform:translateX(-50%);font:9px/1 var(--mono);color:var(--ink-dim)}
+  #stepBall{position:absolute;left:20%;top:96px;width:34px;height:34px;border-radius:11px;background:var(--blue);transform:translate(-50%,-50%);transition:left .16s ease}
+  .step-ghost{position:absolute;top:96px;width:12px;height:12px;border-radius:4px;background:#b9cffd;transform:translate(-50%,-50%);opacity:0;transition:opacity .2s}
+  #stepCaption{position:absolute;left:34px;right:34px;bottom:18px;text-align:center;font:11px/1.4 var(--mono);color:var(--ink-dim)}
+  .step-readout{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;margin-top:14px}
+  .step-readout>div{background:var(--panel);padding:11px 13px}
+  .step-readout span{display:block;font:9.5px/1 var(--mono);color:var(--ink-dim);letter-spacing:.03em}
+  .step-readout b{display:block;margin-top:7px;font:650 12px/1 var(--mono);font-variant-numeric:tabular-nums}
+
+  .mapping{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:20px 0}
+  .map-row{display:grid;grid-template-columns:92px 1fr 1fr;border-bottom:1px solid var(--line)}
+  .map-row:last-child{border-bottom:0}
+  .map-row>div{padding:12px 14px;border-right:1px solid var(--line);font-size:13px;line-height:1.5}
+  .map-row>div:last-child{border-right:0}
+  .map-row.head>div{font:700 10px/1 var(--mono);color:var(--ink-dim);letter-spacing:.04em;background:var(--panel)}
+  .map-key{font-family:var(--mono);color:var(--ink-dim)}
+
+  .footer{margin-top:72px;padding-top:24px;border-top:1px solid var(--line);font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);line-height:1.8}
+  .footer a{color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+
+  @media(max-width:640px){
+    body{font-size:17px}
+    .doc{padding:48px 18px 90px}
+    h1{font-size:27px}
+    .ad-label{font-size:10.5px}
+    .ad-prow label{flex:0 0 106px;font-size:12px}
+    .ad-prow .pv{flex:0 0 46px;font-size:11.5px}
+    #playStage{height:440px}
+    #springToy,#frameGhost{width:72px;height:72px;border-radius:21px}
+    .toy-grid{inset:12px;gap:5px}.toy-grid i{border-radius:8px}
+    #frameGhost::after{top:80px}
+    .controls{flex-wrap:wrap}
+    .controls .ad-label{flex:1 1 100%;order:-1}
+    .mini-btn{flex:1}
+    .ad-replay{margin-left:0}
+    .note-grid{grid-template-columns:1fr}
+    .note-card{min-height:0}
+    .formula{font-size:13px}
+    .step-readout{grid-template-columns:1fr}
+    .map-row{grid-template-columns:72px 1fr}
+    .map-row>div:nth-child(3){grid-column:2;border-top:1px dashed var(--line)}
+    .map-row.head>div:nth-child(3){display:none}
+    .map-row.head>div:nth-child(2)::after{content:" / Metaball"}
+  }
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<article class="doc">
+  <h1>Spring Physics</h1>
+  <p class="sub">Interactive notes on motion, state, and time.</p>
+
+  <p class="act-label first">DEMO 01</p>
+  <h2>Spring Slingshot</h2>
+  <p class="demo-sub">Grab the toy, throw it, or tap anywhere to move its home. Its position, squash, rotation, trail, and return are all driven by the same spring state.</p>
+
+  <div class="stage-card">
+    <span class="cap">DRAG · FLING · TAP TO MOVE HOME</span>
+    <div id="playStage" aria-label="Spring slingshot interactive stage">
+      <svg id="tetherSvg" aria-hidden="true"><path id="tetherPath"></path></svg>
+      <div id="trail" aria-hidden="true">
+        <i class="trail-dot"></i><i class="trail-dot"></i><i class="trail-dot"></i><i class="trail-dot"></i>
+        <i class="trail-dot"></i><i class="trail-dot"></i><i class="trail-dot"></i><i class="trail-dot"></i>
+        <i class="trail-dot"></i><i class="trail-dot"></i><i class="trail-dot"></i><i class="trail-dot"></i>
+      </div>
+      <div id="anchor" aria-hidden="true"></div>
+      <div id="frameGhost" aria-hidden="true"></div>
+      <div id="springToy" role="button" tabindex="0" aria-label="Drag and throw the spring toy">
+        <span class="toy-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      </div>
+      <div id="gestureHint">Drag the toy and let go<br>Tap empty space to move its home</div>
+      <div id="frameFlash" aria-hidden="true"></div>
+    </div>
+    <div class="energy" aria-label="Current spring energy"><div id="energyBar"></div></div>
+    <div class="controls">
+      <span class="ad-label" id="liveInfo"><b>AT REST</b> · v 0 px/s</span>
+      <button class="mini-btn" id="ghostToggle" aria-pressed="false">FRAME GHOST</button>
+      <button class="mini-btn" id="dropFrame">DROP 64MS</button>
+      <button class="ad-replay" id="resetToy" title="Reset toy" aria-label="Reset spring toy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="ad-params">
+    <div class="ad-pgroup">SPRING · fixed 4ms · mass 1</div>
+    <div class="ad-prow">
+      <label>Stiffness <span class="k">k</span></label>
+      <input id="springK" type="range" min="40" max="800" step="1" value="290" aria-label="Stiffness k" />
+      <span class="pv" id="springKValue">290</span>
+    </div>
+    <div class="ad-prow">
+      <label>Damping ratio <span class="k">ζ</span></label>
+      <input id="springZeta" type="range" min="0.15" max="1.30" step="0.01" value="0.70" aria-label="Damping ratio zeta" />
+      <span class="pv" id="springZetaValue">0.70</span>
+    </div>
+    <div class="ad-pgroup gap">Presets</div>
+    <div class="preset-row">
+      <button class="preset on" data-k="290" data-z="0.70">Cheng Lou</button>
+      <button class="preset" data-k="121" data-z="0.72">Metaball</button>
+      <button class="preset" data-k="180" data-z="0.38">Bouncy</button>
+      <button class="preset" data-k="196" data-z="1.00">Critical</button>
+    </div>
+    <div class="conversion">
+      <div><span>DAMPING · b</span><b id="dampingValue">23.84</b></div>
+      <div><span>FREQUENCY · ω</span><b id="omegaValue">17.03</b></div>
+    </div>
+  </div>
+
+  <p class="act-label">RESEARCH 01</p>
+  <h2>One State, Two Forces</h2>
+  <p class="body-copy">Spring 不预先生成一条动画曲线。它只保存当前状态，然后从这一刻推算下一刻。目标在中途改变，或松手时注入新的速度，都不需要重新创建 easing。</p>
+
+  <div class="note-grid">
+    <section class="note-card">
+      <div class="note-kicker">SPRING FORCE</div>
+      <h3>距离负责拉回。</h3>
+      <p>离目标越远，恢复力越大；负号让力始终指向目标。</p>
+      <div class="formula">F<sub>s</sub> = −<span class="blue">k</span>(pos − dest)</div>
+    </section>
+    <section class="note-card">
+      <div class="note-kicker">DAMPING FORCE</div>
+      <h3>速度负责减速。</h3>
+      <p>阻尼力与速度方向相反，持续带走系统能量。</p>
+      <div class="formula">F<sub>d</sub> = −<span class="orange">b</span>v</div>
+    </section>
+  </div>
+
+  <div class="callout"><code>state = { pos, dest, v, k, b }</code><br />Spring 的自然感主要来自状态连续。拖拽时改变位置，松手时保留速度，之后的运动就会自然接上。</div>
+
+  <p class="act-label">RESEARCH 02</p>
+  <h2>Semi-implicit Euler</h2>
+  <p class="body-copy">两份实现都属于欧拉积分，但准确名称是半隐式欧拉：先更新速度，再使用刚更新的速度推进位置。</p>
+
+  <div class="codebox">
+    <div class="codehead"><span>THE IMPORTANT ORDER</span><span>dt = 0.004</span></div>
+    <pre><code><span class="cm">// 1. old position + old velocity → acceleration</span>
+<span class="kw">const</span> a = k * (dest - pos) - b * v
+
+<span class="cm">// 2. acceleration → new velocity</span>
+v += a * dt
+
+<span class="cm">// 3. new velocity → new position</span>
+pos += <span class="hi">v</span> * dt</code></pre>
+  </div>
+
+  <p class="act-label">DEMO 02</p>
+  <h2>One Step at a Time</h2>
+  <p class="demo-sub">Advance the same spring manually. Every click performs exactly one 16ms semi-implicit Euler step, so the update order is visible instead of hidden inside an animation loop.</p>
+
+  <div class="stage-card">
+    <span class="cap">CLICK STEP · WATCH VELOCITY CHANGE BEFORE POSITION</span>
+    <div id="stepStage">
+      <div class="step-track"></div><div class="step-target"></div>
+      <i class="step-ghost"></i><i class="step-ghost"></i><i class="step-ghost"></i><i class="step-ghost"></i><i class="step-ghost"></i><i class="step-ghost"></i>
+      <div id="stepBall"></div>
+      <div id="stepCaption">x 0.2000 · v 0.0000</div>
+    </div>
+    <div class="controls">
+      <span class="ad-label" id="stepInfo"><b>STEP 00</b> · ready</span>
+      <button class="mini-btn on" id="advanceStep">ADVANCE 16MS</button>
+      <button class="ad-replay" id="resetStep" title="Reset steps" aria-label="Reset step demo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="step-readout">
+    <div><span>ACCELERATION · a</span><b id="stepA">72.6000</b></div>
+    <div><span>NEW VELOCITY · v</span><b id="stepV">1.1616</b></div>
+    <div><span>NEW POSITION · x</span><b id="stepX">0.2186</b></div>
+  </div>
+
+  <p class="act-label">RESEARCH 03</p>
+  <h2>Two Parameter Languages</h2>
+  <p class="body-copy">Cheng Lou 的写法直接使用刚度 <code>k</code> 和阻尼 <code>b</code>。Metaball 页面使用自然角频率 <code>ω</code> 与阻尼比 <code>ζ</code>。质量为 1 时，它们是同一个模型。</p>
+  <div class="mapping">
+    <div class="map-row head"><div>MEANING</div><div>CHENG LOU</div><div>METABALL</div></div>
+    <div class="map-row"><div class="map-key">speed</div><div><code>k</code> stiffness</div><div><code>ω = √k</code></div></div>
+    <div class="map-row"><div class="map-key">damping</div><div><code>b</code> coefficient</div><div><code>ζ = b / 2√k</code></div></div>
+    <div class="map-row"><div class="map-key">equiv.</div><div><code>k = ω²</code></div><div><code>b = 2ζω</code></div></div>
+    <div class="map-row"><div class="map-key">example</div><div><code>k 121 · b 15.84</code></div><div><code>ω 11 · ζ .72</code></div></div>
+  </div>
+
+  <p class="act-label">RESEARCH 04</p>
+  <h2>Same Integrator, Different Time</h2>
+  <p class="body-copy">蓝色玩具每次只前进固定的 4ms，一帧内可以补跑多次。橙色 ghost 每个渲染帧只运行一次，并把最大步长限制为 1/30 秒。它们都是半隐式欧拉，区别在时间策略。</p>
+  <div class="note-grid">
+    <section class="note-card">
+      <div class="note-kicker">FIXED 4MS</div>
+      <h3>物理与刷新率解耦。</h3>
+      <p>60Hz 一帧大约四步，120Hz 一帧大约两步。掉帧后补跑小步，轨迹更一致。</p>
+      <div class="formula">steps = ⌊elapsed / 4ms⌋</div>
+    </section>
+    <section class="note-card">
+      <div class="note-kicker">FRAME Δt</div>
+      <h3>每帧只计算一次。</h3>
+      <p>实现更短、成本固定。限制最大 dt 能防止爆炸，但掉帧时会丢失一部分真实时间。</p>
+      <div class="formula">dt = min(frame, 1/30)</div>
+    </section>
+  </div>
+
+  <p class="act-label">SOURCE</p>
+  <h2>Minimal Fixed-step Spring</h2>
+  <p class="demo-sub">Framework-free. The same function can drive position, scale, opacity, radius, or WebGL uniforms.</p>
+  <div class="codebox">
+    <div class="codehead"><span>spring.js</span><button class="copy-btn" id="copyCode">COPY</button></div>
+    <pre><code id="sourceCode">const STEP = 0.004
+
+function spring(pos, k = 290, b = 24) {
+  return { pos, dest: pos, v: 0, k, b }
+}
+
+function step(s) {
+  const a = s.k * (s.dest - s.pos) - s.b * s.v
+  s.v += a * STEP
+  s.pos += s.v * STEP
+}
+
+function frame(now) {
+  const steps = Math.floor((now - simulatedUntil) / 4)
+  simulatedUntil += steps * 4
+  for (let i = 0; i &lt; steps; i++) step(state)
+  requestAnimationFrame(frame)
+}</code></pre>
+  </div>
+
+  <div class="footer">Inspired by <a href="https://x.com/_chenglou" target="_blank" rel="noopener">@_chenglou</a> · Semi-implicit Euler · mass = 1</div>
+</article>
+
+<script>
+'use strict'
+
+const $ = selector => document.querySelector(selector)
+
+// =============================================================================
+// DEMO 01 — Spring Slingshot
+// Render-on-demand, fixed 4ms steps, and a frame-dt ghost for comparison.
+// =============================================================================
+const playStage = $('#playStage')
+const springToy = $('#springToy')
+const frameGhost = $('#frameGhost')
+const anchorEl = $('#anchor')
+const tetherPath = $('#tetherPath')
+const gestureHint = $('#gestureHint')
+const energyBar = $('#energyBar')
+const liveInfo = $('#liveInfo')
+const trailDots = [...document.querySelectorAll('.trail-dot')]
+
+const sim = {
+  width: 0, height: 0,
+  k: 290, zeta: .70, b: 0,
+  dest: { x: 0, y: 0 },
+  fixed: { x: 0, y: 0, vx: 0, vy: 0 },
+  frame: { x: 0, y: 0, vx: 0, vy: 0 },
+  fixedAccumulator: 0,
+  lastNow: null,
+  scheduled: false,
+  dragging: false,
+  dragOffset: { x: 0, y: 0 },
+  pointerHistory: [],
+  compare: false,
+  dropNextFrame: false,
+  trail: [],
+  lastTrailAt: 0,
+  interacted: false
+}
+
+const FIXED_STEP = .004
+const TOY_RADIUS = 41
+
+function updateDerivedParams(){
+  sim.b = 2 * sim.zeta * Math.sqrt(sim.k)
+  $('#springKValue').textContent = sim.k.toFixed(0)
+  $('#springZetaValue').textContent = sim.zeta.toFixed(2)
+  $('#dampingValue').textContent = sim.b.toFixed(2)
+  $('#omegaValue').textContent = Math.sqrt(sim.k).toFixed(2)
+  document.querySelectorAll('.preset').forEach(button => {
+    const match = Math.abs(+button.dataset.k - sim.k) < .01 && Math.abs(+button.dataset.z - sim.zeta) < .001
+    button.classList.toggle('on', match)
+  })
+}
+
+function clamp(v, min, max){ return Math.max(min, Math.min(max, v)) }
+function localPoint(event){
+  const r = playStage.getBoundingClientRect()
+  return { x: clamp(event.clientX - r.left, TOY_RADIUS, r.width - TOY_RADIUS), y: clamp(event.clientY - r.top, TOY_RADIUS, r.height - TOY_RADIUS) }
+}
+function speedOf(s){ return Math.hypot(s.vx, s.vy) }
+function isDone(s){ return Math.hypot(sim.dest.x - s.x, sim.dest.y - s.y) < .12 && speedOf(s) < .16 }
+function snapHome(s){ s.x = sim.dest.x; s.y = sim.dest.y; s.vx = 0; s.vy = 0 }
+
+function stepSpring(s, dt){
+  const ax = sim.k * (sim.dest.x - s.x) - sim.b * s.vx
+  const ay = sim.k * (sim.dest.y - s.y) - sim.b * s.vy
+  s.vx += ax * dt; s.vy += ay * dt
+  s.x += s.vx * dt; s.y += s.vy * dt
+}
+
+function scheduleRender(){
+  if (sim.scheduled) return
+  sim.scheduled = true
+  requestAnimationFrame(render)
+}
+
+function setHome(x, y){
+  sim.dest.x = clamp(x, 54, sim.width - 54)
+  sim.dest.y = clamp(y, 68, sim.height - 58)
+  anchorEl.classList.remove('pulse')
+  void anchorEl.offsetWidth
+  anchorEl.classList.add('pulse')
+  gestureHint.style.opacity = 0
+  sim.interacted = true
+  scheduleRender()
+}
+
+function setCompare(on){
+  sim.compare = on
+  const button = $('#ghostToggle')
+  button.classList.toggle('on', on)
+  button.setAttribute('aria-pressed', String(on))
+  frameGhost.classList.toggle('show', on)
+  if (on) sim.frame = { ...sim.fixed }
+  scheduleRender()
+}
+
+function releaseVelocity(){
+  const now = performance.now()
+  const points = sim.pointerHistory
+  let i = points.length - 1
+  while (i > 0 && now - points[i].time < 90) i--
+  const first = points[i], last = points[points.length - 1]
+  if (!first || !last || last.time <= first.time) return { vx: 0, vy: 0 }
+  const dt = (last.time - first.time) / 1000
+  return {
+    vx: clamp((last.x - first.x) / dt, -2400, 2400),
+    vy: clamp((last.y - first.y) / dt, -2400, 2400)
+  }
+}
+
+playStage.addEventListener('pointerdown', event => {
+  const p = localPoint(event)
+  if (event.target.closest('#springToy')) {
+    event.preventDefault()
+    sim.dragging = true
+    sim.dragOffset.x = p.x - sim.fixed.x
+    sim.dragOffset.y = p.y - sim.fixed.y
+    sim.pointerHistory = [{ x: sim.fixed.x, y: sim.fixed.y, time: performance.now() }]
+    sim.fixedAccumulator = 0
+    springToy.classList.add('grabbed')
+    playStage.classList.add('dragging')
+    gestureHint.style.opacity = 0
+    sim.interacted = true
+    try { playStage.setPointerCapture(event.pointerId) } catch (_) {}
+  } else {
+    setHome(p.x, p.y)
+  }
+  scheduleRender()
+})
+
+playStage.addEventListener('pointermove', event => {
+  if (!sim.dragging) return
+  const p = localPoint(event)
+  const x = clamp(p.x - sim.dragOffset.x, TOY_RADIUS, sim.width - TOY_RADIUS)
+  const y = clamp(p.y - sim.dragOffset.y, TOY_RADIUS, sim.height - TOY_RADIUS)
+  const time = performance.now()
+  sim.pointerHistory.push({ x, y, time })
+  if (sim.pointerHistory.length > 16) sim.pointerHistory.shift()
+  const v = releaseVelocity()
+  Object.assign(sim.fixed, { x, y, vx: v.vx, vy: v.vy })
+  Object.assign(sim.frame, sim.fixed)
+  scheduleRender()
+})
+
+function endDrag(event){
+  if (!sim.dragging) return
+  const v = releaseVelocity()
+  sim.fixed.vx = sim.frame.vx = v.vx
+  sim.fixed.vy = sim.frame.vy = v.vy
+  sim.dragging = false
+  sim.pointerHistory.length = 0
+  springToy.classList.remove('grabbed')
+  playStage.classList.remove('dragging')
+  try { if (event && playStage.hasPointerCapture(event.pointerId)) playStage.releasePointerCapture(event.pointerId) } catch (_) {}
+  scheduleRender()
+}
+playStage.addEventListener('pointerup', endDrag)
+playStage.addEventListener('pointercancel', endDrag)
+window.addEventListener('blur', () => endDrag())
+
+springToy.addEventListener('keydown', event => {
+  const amount = event.shiftKey ? 28 : 10
+  if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(event.key)) return
+  event.preventDefault()
+  if (event.key === ' ') {
+    sim.fixed.vx += 900; sim.fixed.vy -= 650; Object.assign(sim.frame, sim.fixed)
+  } else {
+    const dx = event.key === 'ArrowLeft' ? -amount : event.key === 'ArrowRight' ? amount : 0
+    const dy = event.key === 'ArrowUp' ? -amount : event.key === 'ArrowDown' ? amount : 0
+    setHome(sim.dest.x + dx, sim.dest.y + dy)
+  }
+  scheduleRender()
+})
+
+function resetToy(animate = true){
+  sim.dest.x = sim.width * .5; sim.dest.y = sim.height * .56
+  if (animate) {
+    sim.fixed.x = sim.width * .22; sim.fixed.y = sim.height * .78
+    sim.fixed.vx = 300; sim.fixed.vy = -120
+  } else {
+    sim.fixed.x = sim.dest.x; sim.fixed.y = sim.dest.y
+    sim.fixed.vx = sim.fixed.vy = 0
+  }
+  sim.frame = { ...sim.fixed }
+  sim.fixedAccumulator = 0
+  sim.trail.length = 0
+  scheduleRender()
+}
+
+function resizeSimulation(first = false){
+  const oldW = sim.width || playStage.clientWidth
+  const oldH = sim.height || playStage.clientHeight
+  sim.width = playStage.clientWidth; sim.height = playStage.clientHeight
+  if (first || !oldW || !oldH) resetToy(false)
+  else {
+    const sx = sim.width / oldW, sy = sim.height / oldH
+    sim.dest.x *= sx; sim.dest.y *= sy
+    for (const s of [sim.fixed, sim.frame]) { s.x *= sx; s.y *= sy }
+  }
+  scheduleRender()
+}
+
+function addTrail(now){
+  if (now - sim.lastTrailAt < 24) return
+  sim.lastTrailAt = now
+  sim.trail.unshift({ x: sim.fixed.x, y: sim.fixed.y })
+  if (sim.trail.length > trailDots.length) sim.trail.pop()
+}
+
+function renderTrail(moving){
+  trailDots.forEach((node, i) => {
+    const point = sim.trail[i]
+    if (!moving || !point) { node.style.opacity = 0; return }
+    const scale = 1 - i / trailDots.length * .65
+    node.style.transform = `translate3d(${point.x - 9}px,${point.y - 9}px,0) scale(${scale})`
+    node.style.opacity = Math.max(0, .28 - i * .019)
+  })
+}
+
+function toyTransform(s, isGhost = false){
+  const speed = speedOf(s)
+  const angle = speed > 24 ? Math.atan2(s.vy, s.vx) * 180 / Math.PI : 0
+  const stretch = Math.min(isGhost ? .12 : .22, speed / 5200)
+  const radius = ((isGhost ? frameGhost.offsetWidth : springToy.offsetWidth) || 82) / 2
+  return `translate3d(${s.x - radius}px,${s.y - radius}px,0) rotate(${angle}deg) scale(${1 + stretch},${1 - stretch * .52})`
+}
+
+function render(now){
+  sim.scheduled = false
+  let dt = sim.lastNow == null ? 0 : clamp((now - sim.lastNow) / 1000, 0, .064)
+  sim.lastNow = now
+  if (sim.dropNextFrame) {
+    dt = .064
+    sim.dropNextFrame = false
+    const flash = $('#frameFlash')
+    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go')
+  }
+
+  if (!sim.dragging && dt > 0) {
+    sim.fixedAccumulator += dt
+    let steps = 0
+    while (sim.fixedAccumulator >= FIXED_STEP && steps < 40) {
+      stepSpring(sim.fixed, FIXED_STEP)
+      sim.fixedAccumulator -= FIXED_STEP
+      steps++
+    }
+    if (sim.compare) stepSpring(sim.frame, Math.min(dt, 1 / 30))
+    else sim.frame = { ...sim.fixed }
+  }
+
+  if (!sim.dragging && isDone(sim.fixed)) snapHome(sim.fixed)
+  if (!sim.dragging && sim.compare && isDone(sim.frame)) snapHome(sim.frame)
+  const moving = sim.dragging || !isDone(sim.fixed) || (sim.compare && !isDone(sim.frame))
+  if (moving) addTrail(now)
+  else sim.trail.length = 0
+
+  const speed = speedOf(sim.fixed)
+  const dist = Math.hypot(sim.dest.x - sim.fixed.x, sim.dest.y - sim.fixed.y)
+  const midX = (sim.dest.x + sim.fixed.x) / 2
+  const midY = (sim.dest.y + sim.fixed.y) / 2
+  const bend = clamp(speed / 45, 0, 28)
+  const nx = speed > 1 ? -sim.fixed.vy / speed : 0
+  const ny = speed > 1 ? sim.fixed.vx / speed : 0
+  tetherPath.setAttribute('d', `M ${sim.dest.x.toFixed(1)} ${sim.dest.y.toFixed(1)} Q ${(midX + nx * bend).toFixed(1)} ${(midY + ny * bend).toFixed(1)} ${sim.fixed.x.toFixed(1)} ${sim.fixed.y.toFixed(1)}`)
+  tetherPath.style.opacity = clamp(dist / 80, .18, .85)
+  anchorEl.style.left = sim.dest.x + 'px'; anchorEl.style.top = sim.dest.y + 'px'
+  springToy.style.transform = toyTransform(sim.fixed)
+  frameGhost.style.transform = toyTransform(sim.frame, true)
+  renderTrail(moving)
+
+  const energyLevel = clamp(dist / 250 + speed / 2200, 0, 1)
+  energyBar.style.width = (energyLevel * 100).toFixed(1) + '%'
+  const state = sim.dragging ? 'GRABBED' : moving ? 'SETTLING' : 'AT REST'
+  liveInfo.innerHTML = `<b>${state}</b> · v ${speed.toFixed(0)} px/s · Δ ${dist.toFixed(0)} px`
+
+  if (moving) scheduleRender()
+  else sim.lastNow = null
+}
+
+$('#springK').addEventListener('input', event => {
+  sim.k = +event.target.value; updateDerivedParams(); scheduleRender()
+})
+$('#springZeta').addEventListener('input', event => {
+  sim.zeta = +event.target.value; updateDerivedParams(); scheduleRender()
+})
+document.querySelectorAll('.preset').forEach(button => button.addEventListener('click', () => {
+  sim.k = +button.dataset.k; sim.zeta = +button.dataset.z
+  $('#springK').value = sim.k; $('#springZeta').value = sim.zeta
+  updateDerivedParams()
+  sim.fixed.vx += 420; sim.fixed.vy -= 260; sim.frame = { ...sim.fixed }
+  scheduleRender()
+}))
+$('#ghostToggle').addEventListener('click', () => setCompare(!sim.compare))
+$('#dropFrame').addEventListener('click', event => {
+  if (!sim.compare) setCompare(true)
+  const almostHome = Math.hypot(sim.dest.x - sim.fixed.x, sim.dest.y - sim.fixed.y) < 20 && speedOf(sim.fixed) < 120
+  if (almostHome) {
+    const nextX = sim.dest.x > sim.width * .5 ? sim.width * .28 : sim.width * .72
+    setHome(nextX, sim.height * .38)
+  }
+  sim.frame = { ...sim.fixed }
+  sim.dropNextFrame = true
+  event.currentTarget.classList.remove('hot'); void event.currentTarget.offsetWidth; event.currentTarget.classList.add('hot')
+  scheduleRender()
+})
+$('#resetToy').addEventListener('click', () => resetToy(true))
+window.addEventListener('resize', () => resizeSimulation(false))
+
+updateDerivedParams()
+resizeSimulation(true)
+render(performance.now())
+
+// =============================================================================
+// DEMO 02 — One manual semi-implicit Euler step.
+// =============================================================================
+const stepDemo = { x: .2, v: 0, dest: .82, k: 121, b: 15.84, dt: .016, count: 0, history: [] }
+const stepGhosts = [...document.querySelectorAll('.step-ghost')]
+
+function previewManualStep(){
+  const a = stepDemo.k * (stepDemo.dest - stepDemo.x) - stepDemo.b * stepDemo.v
+  const v = stepDemo.v + a * stepDemo.dt
+  const x = stepDemo.x + v * stepDemo.dt
+  return { a, v, x }
+}
+function renderManualStep(){
+  const next = previewManualStep()
+  $('#stepBall').style.left = (stepDemo.x * 100) + '%'
+  $('#stepCaption').textContent = `x ${stepDemo.x.toFixed(4)} · v ${stepDemo.v.toFixed(4)}`
+  $('#stepInfo').innerHTML = `<b>STEP ${String(stepDemo.count).padStart(2,'0')}</b> · ${stepDemo.count ? 'integrated' : 'ready'}`
+  $('#stepA').textContent = next.a.toFixed(4)
+  $('#stepV').textContent = next.v.toFixed(4)
+  $('#stepX').textContent = next.x.toFixed(4)
+  stepGhosts.forEach((node, i) => {
+    const x = stepDemo.history[i]
+    node.style.left = (x * 100) + '%'
+    node.style.opacity = x == null ? 0 : Math.max(.12, .55 - i * .08)
+  })
+}
+$('#advanceStep').addEventListener('click', () => {
+  stepDemo.history.unshift(stepDemo.x)
+  if (stepDemo.history.length > stepGhosts.length) stepDemo.history.pop()
+  const next = previewManualStep()
+  stepDemo.x = next.x; stepDemo.v = next.v; stepDemo.count++
+  renderManualStep()
+})
+$('#resetStep').addEventListener('click', () => {
+  Object.assign(stepDemo, { x:.2, v:0, count:0, history:[] })
+  renderManualStep()
+})
+renderManualStep()
+
+// Copy falls back to selecting the source when clipboard access is unavailable.
+$('#copyCode').addEventListener('click', async event => {
+  const button = event.currentTarget
+  try {
+    await navigator.clipboard.writeText($('#sourceCode').textContent)
+    button.textContent = 'COPIED'
+  } catch (_) {
+    const range = document.createRange(); range.selectNodeContents($('#sourceCode'))
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range)
+    button.textContent = 'SELECTED'
+  }
+  setTimeout(() => button.textContent = 'COPY', 1400)
+})
+</script>
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
+<title>Liquid Connector · sdf_union + spring</title>
+<style>
+  /* 布局 1:1 复刻 Notion connector；融合内核 = WebGL sdf_union（QuartzCore 逆向）；
+     动画 = chenglou 帧率无关 spring；渲染架构 = chenglou 单 render()。
+     配色/面板参考 playground（horizon-orb / index）的 --ink 墨色系。 */
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e3e2df; --bg:#f7f6f4; --panel:#ffffff;
+    --card:#fdfdfd; --muted:#686868; --blue:#1e55c7;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font:14px/1.5 var(--sans);color:var(--ink);background:var(--bg);
+    display:flex;min-height:100dvh;overflow:hidden;-webkit-font-smoothing:antialiased;
+    user-select:none;-webkit-user-select:none}
+
+  /* 左舞台 */
+  #stage{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:24px}
+  #comp{position:relative;width:min(90vw,520px);height:min(78vh,460px)}
+  #gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #dom{position:absolute;inset:0;pointer-events:none}
+
+  .card{position:absolute;pointer-events:auto;overflow:hidden;will-change:transform,width,height}
+  .card>.inner{position:absolute;inset:0}
+
+  /* ── 上卡片：MCP Connector · Notion + Skip + Connect ── */
+  .identity{position:absolute;left:24px;top:50%;transform:translateY(-50%);
+    display:flex;align-items:center;gap:13px;min-width:0}
+  .notion-mark{width:31px;height:33px;flex:0 0 31px;color:#111}
+  .provider-copy{line-height:1}
+  .eyebrow{display:block;color:var(--muted);font-size:11px;font-weight:500;line-height:13px}
+  .provider-name{display:block;margin-top:2px;font-size:17px;font-weight:600;letter-spacing:-.015em;line-height:18px;color:var(--ink)}
+  .actions{position:absolute;right:24px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:21px}
+  .skip{border:0;background:transparent;color:#525252;font:600 14px var(--sans);cursor:pointer;padding:0}
+  .connect{width:97px;height:35px;border:1px solid #ccd9f2;border-radius:999px;background:#fdfdfd;
+    color:var(--blue);font:600 15px var(--sans);cursor:pointer;
+    box-shadow:0 1px 2px rgba(31,73,150,.06),inset 0 0 0 .5px rgba(255,255,255,.8);transition:.15s}
+  .connect:hover{border-color:#adc4ec;background:#fafcff}
+  .connect:active{transform:scale(.97)}
+
+  /* ── 下卡片：输入框 + 圆形发送 ── */
+  .prompt-in{position:absolute;left:23px;right:47px;top:19px;height:54px;border:0;outline:0;background:none;
+    resize:none;color:#242424;font:400 18px/1.4 var(--sans);letter-spacing:.009em}
+  .prompt-in::placeholder{color:#535353}
+  .send{position:absolute;right:14px;bottom:17px;width:34px;height:34px;border:0;border-radius:17px;
+    background:#dedede;color:#fff;display:grid;place-items:center;cursor:pointer;transition:background .2s,transform .12s}
+  .send.active{background:#2369df}
+  .send:active{transform:scale(.97)}
+  .send svg{width:15px;height:15px;display:block}
+
+  /* ── 右面板（horizon-orb 规范）── */
+  #panel{width:272px;height:100dvh;overflow-y:auto;display:flex;flex-direction:column;gap:2px;
+    border-left:1px solid var(--line);background:var(--panel);
+    padding:20px 18px calc(18px + env(safe-area-inset-bottom))}
+  #panel h2{font-size:13px;font-weight:600;margin-bottom:2px}
+  #panel .sub{font-size:11px;color:var(--ink-dim);margin-bottom:16px;line-height:1.6}
+  .row.opt{display:flex;align-items:center;margin-bottom:8px}
+  .row.opt .lab{font-size:13px;color:var(--ink-dim);flex:0 0 auto;margin-right:auto}
+  .opts{display:flex;gap:8px}
+  .opts button{-webkit-appearance:none;appearance:none;cursor:pointer;font:13px var(--sans);color:var(--ink-dim);
+    background:none;border:1px solid transparent;border-radius:999px;padding:6px 13px;transition:.15s}
+  .opts button:hover{color:var(--ink)}
+  .opts button.on{color:var(--ink);border-color:#c9c8c3;background:var(--panel)}
+  .tune{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
+  .tune .gh{font:700 11px/1 var(--mono);color:var(--ink);letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px}
+  .srow{display:flex;align-items:center;gap:10px}
+  .srow label{font-size:12.5px;color:var(--ink-soft);flex:0 0 84px}
+  .srow label .k{font-family:var(--mono);color:var(--ink-dim);font-size:11px}
+  .srow input[type=range]{flex:1;min-width:0;accent-color:var(--ink);height:3px;cursor:pointer}
+  .srow .pv{font-family:var(--mono);font-size:12px;flex:0 0 40px;text-align:right;color:var(--ink)}
+
+  #err{position:fixed;left:12px;right:12px;bottom:12px;background:rgba(180,30,20,.94);color:#fff;
+    padding:10px 14px;border-radius:10px;font:12px var(--mono);white-space:pre-wrap;display:none}
+
+  @media(max-width:760px){
+    body{flex-direction:column;overflow-y:auto}
+    #stage{width:100%;flex:0 0 auto;height:56svh}
+    #panel{width:100%;height:auto;overflow:visible;border-left:0;border-top:1px solid var(--line)}
+    .srow{min-height:40px}.opts button{min-height:40px}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="comp">
+    <canvas id="gl"></canvas>
+    <div id="dom">
+      <!-- 上卡片 -->
+      <div class="card" id="cardTop"><div class="inner">
+        <div class="identity">
+          <svg class="notion-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"></path></svg>
+          <span class="provider-copy">
+            <span class="eyebrow">MCP Connector</span>
+            <span class="provider-name">Notion</span>
+          </span>
+        </div>
+        <div class="actions">
+          <button class="skip" type="button">Skip</button>
+          <button class="connect" type="button">Connect</button>
+        </div>
+      </div></div>
+      <!-- 下卡片 -->
+      <div class="card" id="cardBot"><div class="inner">
+        <textarea class="prompt-in" id="promptInput" rows="2" placeholder="Ask anything..." aria-label="Prompt"></textarea>
+        <button class="send" id="sendBtn" type="button" aria-label="Send">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M8 3 4.5 6.5M8 3l3.5 3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/></svg>
+        </button>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<div id="panel">
+  <h2>Liquid Connector</h2>
+  <div class="sub">sdf_union 融合 · chenglou 帧率无关弹簧 · 控件泡进液态</div>
+
+  <div class="row opt">
+    <span class="lab">状态</span>
+    <div class="opts" id="states">
+      <button data-m="split" class="on">展开</button>
+      <button data-m="merge">合并</button>
+    </div>
+  </div>
+  <div class="row opt">
+    <span class="lab">融合算法</span>
+    <div class="opts">
+      <button id="btnGrad" class="on" type="button">梯度感知</button>
+    </div>
+  </div>
+
+  <div class="tune">
+    <div class="gh">Spring · chenglou 4ms/step</div>
+    <div class="srow"><label>刚度 <span class="k">k</span></label><input id="sK" type="range" min="80" max="600" step="10" value="290"><span class="pv" id="vK">290</span></div>
+    <div class="srow"><label>阻尼 <span class="k">b</span></label><input id="sB" type="range" min="6" max="60" value="24"><span class="pv" id="vB">24</span></div>
+  </div>
+  <div class="tune">
+    <div class="gh">sdf_union · QuartzCore</div>
+    <div class="srow"><label>间距 <span class="k">gap</span></label><input id="sGap" type="range" min="-46" max="200" value="78"><span class="pv" id="vGap">78</span></div>
+    <div class="srow"><label>融合 <span class="k">k</span></label><input id="sFuse" type="range" min="10" max="120" value="52"><span class="pv" id="vFuse">52</span></div>
+  </div>
+</div>
+<div id="err"></div>
+
+<!-- ─────────── WebGL: sdf_union 液态融合 ─────────── -->
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+uniform vec2  uRes;
+uniform vec4  uTop;    // cx, cy, halfW, halfH (物理像素, y 向下)
+uniform vec4  uBot;
+uniform float uRadius, uFuse, uGrad;
+uniform float uScale;  // scale*dpr，让描边宽/阴影偏移在任何分辨率下一致
+out vec4 outColor;
+vec4 sdRoundBox(vec2 p, vec2 c, vec2 b, float r){
+  vec2 lp = p - c; vec2 q = abs(lp) - b + r; vec2 mq = max(q, vec2(0.0));
+  float dOut = length(mq);
+  float d = dOut + min(max(q.x, q.y), 0.0) - r;
+  vec2 grad = (dOut > 1e-4) ? (mq/dOut)*sign(lp)
+            : ((q.x > q.y) ? vec2(sign(lp.x),0.0) : vec2(0.0,sign(lp.y)));
+  return vec4(d, grad, 1.0);
+}
+// 苹果 sdf_union：梯度感知 smooth min（ShaderUtils_::sdf_union 逐行翻译）
+vec4 sdfUnion(vec4 a, vec4 b, float k, float gradAmt){
+  float scale = mix(1.0, clamp(0.5 - 0.5*dot(a.yz, b.yz), 0.0, 1.0), gradAmt);
+  float kEff = k*scale + 1e-4;
+  float h = clamp(0.5 + 0.5*(b.x - a.x)/kEff, 0.0, 1.0);
+  float d = mix(b.x, a.x, h) - kEff*h*(1.0-h);
+  vec2  g = mix(b.yz, a.yz, h);
+  return vec4(d, normalize(g + vec2(1e-5)), 1.0);
+}
+void main(){
+  vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec4 A = sdRoundBox(p, uTop.xy, uTop.zw, uRadius);
+  vec4 B = sdRoundBox(p, uBot.xy, uBot.zw, uRadius);
+  vec4 s = sdfUnion(A, B, uFuse, uGrad);
+  float d = s.x; vec2 grad = s.yz;
+  float aa = max(fwidth(d), 1.0);
+  vec3 bg = vec3(0.969,0.965,0.957);          // 页面底色 --bg
+  vec3 col = bg;
+
+  // ── 白卡片填充（纯白，无内阴影）──
+  float mask = smoothstep(aa, -aa, d);
+  col = mix(col, vec3(0.992), mask);
+
+  // ── 描边：#dedede，总宽 1.5px，以轮廓线 d=0 为中心，两侧各留半个 aa 做抗锯齿 ──
+  float halfW = 0.75*uScale;                        // 1.5px 的一半
+  float stroke = smoothstep(halfW+aa*0.5, halfW-aa*0.5, abs(d));   // |d|<0.75 内为 1
+  col = mix(col, vec3(0.871), stroke);              // #dedede
+
+  outColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const errBox = $('#err');
+function fail(m){ errBox.style.display='block'; errBox.textContent = m; }
+
+// ══════ WebGL ══════
+const cv = $('#gl');
+const gl = cv.getContext('webgl2', { antialias:false });
+if(!gl) fail('WebGL2 不可用');
+function sh(t,src){ const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fail(gl.getShaderInfoLog(s)); return s; }
+const VERT = `#version 300 es
+  void main(){ vec2 v = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(v*2.0-1.0,0.0,1.0); }`;
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, $('#fs').textContent));
+gl.linkProgram(prog); gl.useProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) fail(gl.getProgramInfoLog(prog));
+const U={}; ['uRes','uTop','uBot','uRadius','uFuse','uGrad','uScale'].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+
+let dpr=1;
+function resize(){ dpr = Math.min(devicePixelRatio||1,2);
+  const r = cv.getBoundingClientRect();
+  cv.width = Math.round(r.width*dpr); cv.height = Math.round(r.height*dpr);
+  gl.viewport(0,0,cv.width,cv.height); }
+
+// ══════ chenglou 帧率无关 spring ══════
+const msPerAnimationStep = 4;
+function spring(pos, v=0, k=290, b=24){ return {pos,dest:pos,v,k,b}; }
+function springStep(c){
+  const t = msPerAnimationStep/1000;
+  const a = (-c.k*(c.pos-c.dest)) + (-c.b*c.v);   // mass=1
+  c.v += a*t; c.pos += c.v*t;
+}
+function springGoToEnd(c){ c.pos=c.dest; c.v=0; }
+
+// ══════ 布局常量（对齐 Notion 参考比例）══════
+const CARD_W = 440, CARD_H_TOP = 68, CARD_H_BOT = 134, RADIUS = 26;
+const st = { gap: spring(78), k:290, b:24, fuse:52, grad:1 };
+
+// ══════ 事件 · chenglou 调度 ══════
+let scheduled=false;
+function scheduleRender(){ if(scheduled) return; scheduled=true;
+  requestAnimationFrame(function renderAndMaybeScheduleAnotherRender(now){
+    scheduled=false; if(render(now)) scheduleRender(); }); }
+let animatedUntil=null;
+
+window.addEventListener('resize', () => { resize(); scheduleRender(); });
+$('#sGap').addEventListener('input', e=>{ st.gap.dest=+e.target.value; $('#vGap').textContent=e.target.value; scheduleRender(); });
+$('#sK').addEventListener('input',   e=>{ st.k=+e.target.value; st.gap.k=st.k; $('#vK').textContent=e.target.value; });
+$('#sB').addEventListener('input',   e=>{ st.b=+e.target.value; st.gap.b=st.b; $('#vB').textContent=e.target.value; });
+$('#sFuse').addEventListener('input',e=>{ st.fuse=+e.target.value; $('#vFuse').textContent=e.target.value; scheduleRender(); });
+$('#btnGrad').addEventListener('click', ()=>{ st.grad=st.grad?0:1; $('#btnGrad').classList.toggle('on',!!st.grad); scheduleRender(); });
+document.querySelectorAll('#states button').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('#states button').forEach(x=>x.classList.toggle('on', x===b));
+  st.gap.dest = b.dataset.m==='merge' ? -34 : 78;
+  $('#sGap').value = st.gap.dest; $('#vGap').textContent = st.gap.dest;
+  scheduleRender();
+}));
+
+// 输入框有内容 → 发送按钮变蓝
+const input = $('#promptInput'), send = $('#sendBtn');
+input.addEventListener('input', ()=> send.classList.toggle('active', input.value.trim().length>0));
+
+// ══════ 渲染（chenglou 结构：读 → 动画 → 算 → 写）══════
+const cardTop=$('#cardTop'), cardBot=$('#cardBot');
+function render(now){
+  const rect = cv.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  // 卡片按参考比例缩放到当前舞台宽度
+  const scale = Math.min(1, (W - 24) / CARD_W);
+  const cw = CARD_W*scale, chT = CARD_H_TOP*scale, chB = CARD_H_BOT*scale, rad = RADIUS*scale;
+  const cx = W/2;
+
+  // 动画：补齐整数个 4ms 步
+  let newUntil = animatedUntil ?? now;
+  const steps = Math.floor((now - newUntil)/msPerAnimationStep);
+  newUntil += steps*msPerAnimationStep;
+  let animating=false;
+  for(let i=0;i<steps;i++) springStep(st.gap);
+  if(Math.abs(st.gap.v)<0.01 && Math.abs(st.gap.dest-st.gap.pos)<0.01) springGoToEnd(st.gap);
+  else animating=true;
+
+  // 由 gap 算两卡片位置
+  const gap = st.gap.pos*scale;
+  const totalH = chT + chB + gap;
+  const y0 = (H - totalH)/2;
+  const top = { x:cx, y:y0 + chT/2,               w:cw/2, h:chT/2 };
+  const bot = { x:cx, y:y0 + chT + gap + chB/2,   w:cw/2, h:chB/2 };
+
+  // shader uniform（物理像素）
+  gl.uniform2f(U.uRes, cv.width, cv.height);
+  gl.uniform4f(U.uTop, top.x*dpr, top.y*dpr, top.w*dpr, top.h*dpr);
+  gl.uniform4f(U.uBot, bot.x*dpr, bot.y*dpr, bot.w*dpr, bot.h*dpr);
+  gl.uniform1f(U.uRadius, rad*dpr);
+  gl.uniform1f(U.uFuse, st.fuse*scale*dpr);
+  gl.uniform1f(U.uGrad, st.grad);
+  gl.uniform1f(U.uScale, scale*dpr);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // DOM 卡片跟着走
+  place(cardTop, top); place(cardBot, bot);
+  // 合并时内容淡出（被吸进上卡片）
+  const merge = Math.max(0, Math.min(1, -st.gap.pos/34));
+  cardBot.querySelector('.inner').style.opacity = 1 - merge;
+  cardTop.querySelector('.actions').style.opacity = 1 - merge*0.6;
+
+  animatedUntil = animating ? newUntil : null;
+  return animating;
+}
+function place(el, r){
+  el.style.left=(r.x-r.w)+'px'; el.style.top=(r.y-r.h)+'px';
+  el.style.width=(r.w*2)+'px'; el.style.height=(r.h*2)+'px';
+}
+
+resize();
+scheduleRender();
+</script>
+</body>
+</html>

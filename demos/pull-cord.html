@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pull Cord · Theme Switch</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e6e6e6; --bg:#ffffff; --stage:#f7f6f4; --btn:#ffffff; --btn-hover:#ececee;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+    --r-card:28px; --r-box:18px;
+  }
+  :root[data-theme="dark"]{
+    --ink:#f2f2f2; --ink-soft:#c8c8cc; --ink-dim:#8a8a8e;
+    --line:#2a2a2c; --bg:#111113; --stage:#1c1c1e; --btn:#1c1c1e; --btn-hover:#2a2a2c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;
+    transition:background-color .35s ease,color .35s ease;
+  }
+  .doc{width:100%;max-width:600px}
+  h1{font-size:27px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-dim);line-height:1.7;margin-bottom:26px}
+  .sub b{color:var(--ink-soft);font-weight:600}
+
+  .stage-card{background:var(--stage);border-radius:var(--r-card);padding:18px 18px 16px;transition:background-color .35s ease}
+  .cap{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.04em;padding:4px 8px 16px}
+  #stageArea{position:relative;height:clamp(380px,52vh,480px)}
+  #cordCanvas{display:block;width:100%;height:100%;border-radius:var(--r-box);touch-action:none;cursor:grab}
+  #cordCanvas.drag{cursor:grabbing}
+
+  .controls{display:flex;align-items:center;gap:10px;margin-top:14px;padding:0 4px}
+  .ad-label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);flex:1;line-height:1.6}
+  .ad-label b{color:var(--ink);font-weight:600}
+  .ad-replay{margin-left:auto;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+       color:var(--ink-soft);background:var(--btn);border:1px solid var(--line);border-radius:50%;cursor:pointer;
+       transition:.15s;flex:0 0 auto}
+  .ad-replay:hover{background:var(--btn-hover);color:var(--ink)}
+  .ad-replay:active{transform:rotate(-40deg)}
+  .ad-replay svg{width:16px;height:16px;display:block}
+</style>
+</head>
+<body>
+<article class="doc">
+  <h1>Pull Cord</h1>
+  <p class="sub">拉绳开关:把绳子<b>拉过虚线再松手</b>,切换整页明暗主题——像拉一下灯绳。没拉到位就松手,绳子只是弹回去。</p>
+
+  <div class="stage-card">
+    <span class="cap">PULL-CORD SWITCH · PULL PAST THE LINE · RELEASE</span>
+    <div id="stageArea"><canvas id="cordCanvas"></canvas></div>
+    <div class="controls">
+      <span class="ad-label" id="status"></span>
+      <button class="ad-replay" id="reset" title="重置绳子" aria-label="Reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+</article>
+
+<script>
+'use strict'
+// =============================================================================
+// Pull Cord — 拉绳切换主题。rope.html 的 Verlet 架构:
+//   • 绳链上端固定在"灯座",末端是拉珠,只有拉珠可拖
+//   • 拉伸量 = dist(锚点, 拉珠) − 绳自然长;越过阈值(虚线)松手 → 切主题
+//   • 超过自由行程后阻尼拉伸(rubber-band),拉不断
+//   • 灯亮(浅色)时灯座下有暖光;切换瞬间完成,像真的开关灯
+// =============================================================================
+
+// === scheduler ===============================================================
+let scheduledRender = false
+function scheduleRender() {
+  if (scheduledRender) return
+  scheduledRender = true
+  requestAnimationFrame(function renderAndMaybeScheduleAnotherRender(now) {
+    scheduledRender = false
+    if (render(now)) scheduleRender()
+  })
+}
+
+// === config ==================================================================
+const msPerStep = 4
+const gravity = 0.032
+const damping = 0.998
+const iterations = 6
+const segmentCount = 12
+const beadRadius = 10
+const hitRadius = 24
+const PULL_THRESHOLD = 64      // 拉过这个拉伸量松手才触发
+const FREE_PULL = 96           // 自由行程,超出部分 0.2 阻尼
+const QUIET_FRAMES_TO_SLEEP = 12
+const SLEEP_EPSILON = 0.02
+const MAX_THROW = 25
+
+// 画布配色(主题切换瞬时生效,像开关灯;页面 DOM 走 CSS 过渡)
+const PAL = {
+  light: { stage:'#f7f6f4', cord:'#3a3a3a', bead:'#ffffff', beadRing:'#1a1a1a',
+           armed:'#6E63E8', marker:'#c9c7c2', lamp:'#1a1a1a', glow:'rgba(255,184,74,0.22)' },
+  dark:  { stage:'#1c1c1e', cord:'#8a8a8e', bead:'#1c1c1e', beadRing:'#f2f2f2',
+           armed:'#9B93FF', marker:'#3a3a3c', lamp:'#f2f2f2', glow:null },
+}
+
+// === DOM =====================================================================
+const canvas = document.getElementById('cordCanvas')
+const ctx = canvas.getContext('2d', { alpha: false })
+const statusEl = document.getElementById('status')
+
+// === state ===================================================================
+const points = []
+const sticks = []
+let bead = null, anchor = null
+let ropeLen = 0
+let dark = false
+let dragging = null            // {pointerId, dx, dy}
+let samples = []
+let animatedUntilTime = null
+let quietFrames = 0
+
+function makePoint(x, y) { return { x, y, oldX: x, oldY: y, pinned: false, dragPin: false } }
+function pinAt(p, x, y) { p.x = x; p.y = y; p.oldX = x; p.oldY = y }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(v, hi)) }
+function pal() { return dark ? PAL.dark : PAL.light }
+
+// === setup ===================================================================
+function resizeCanvas() {
+  const dpr = Math.max(1, window.devicePixelRatio || 1)
+  canvas.width = Math.floor(canvas.clientWidth * dpr)
+  canvas.height = Math.floor(canvas.clientHeight * dpr)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  for (const p of points) constrainToBounds(p)
+}
+
+function initCord() {
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  const ax = w / 2, ay = 30
+  ropeLen = h * 0.34
+  const spacing = ropeLen / segmentCount
+
+  points.length = 0
+  sticks.length = 0
+  anchor = makePoint(ax, ay)
+  anchor.pinned = true
+  points.push(anchor)
+  for (let i = 1; i <= segmentCount; i++) {
+    const p = makePoint(ax, ay + spacing * i)
+    points.push(p)
+    sticks.push({ p0: points[i - 1], p1: p, length: spacing })
+  }
+  bead = points[segmentCount]
+}
+
+// === physics =================================================================
+function constrainToBounds(p) {
+  const m = 14
+  const maxX = canvas.clientWidth - m, maxY = canvas.clientHeight - m
+  if (p.x < m) { p.x = m; p.oldX = m } else if (p.x > maxX) { p.x = maxX; p.oldX = maxX }
+  if (p.y < m) { p.y = m; p.oldY = m } else if (p.y > maxY) { p.y = maxY; p.oldY = maxY }
+}
+
+function physicsStep() {
+  for (const p of points) {
+    if (p.pinned || p.dragPin) continue
+    const vx = (p.x - p.oldX) * damping
+    const vy = (p.y - p.oldY) * damping
+    p.oldX = p.x
+    p.oldY = p.y
+    p.x += vx
+    p.y += vy + gravity
+    constrainToBounds(p)
+  }
+  for (let it = 0; it < iterations; it++) {
+    for (const s of sticks) {
+      const i0 = (s.p0.pinned || s.p0.dragPin) ? 0 : 1
+      const i1 = (s.p1.pinned || s.p1.dragPin) ? 0 : 1
+      const invSum = i0 + i1
+      if (!invSum) continue
+      const dx = s.p1.x - s.p0.x
+      const dy = s.p1.y - s.p0.y
+      const dist = Math.hypot(dx, dy) || 1e-4
+      const f = (s.length - dist) / (dist * invSum)
+      if (i0) { s.p0.x -= dx * f * i0; s.p0.y -= dy * f * i0; constrainToBounds(s.p0) }
+      if (i1) { s.p1.x += dx * f * i1; s.p1.y += dy * f * i1; constrainToBounds(s.p1) }
+    }
+  }
+}
+
+function currentPull() {
+  return Math.hypot(bead.x - anchor.x, bead.y - anchor.y) - ropeLen
+}
+function isArmed() { return dragging != null && currentPull() > PULL_THRESHOLD }
+
+// === draw ====================================================================
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  const c = pal()
+  ctx.fillStyle = c.stage
+  ctx.fillRect(0, 0, w, h)
+
+  // 暖光(仅灯亮/浅色时)
+  if (c.glow) {
+    const g = ctx.createRadialGradient(anchor.x, anchor.y, 6, anchor.x, anchor.y, 130)
+    g.addColorStop(0, c.glow)
+    g.addColorStop(1, 'rgba(255,184,74,0)')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(anchor.x, anchor.y, 130, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // 触发刻度线(虚线)+ 标注
+  const triggerY = anchor.y + ropeLen + PULL_THRESHOLD
+  ctx.strokeStyle = c.marker
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([5, 6])
+  ctx.beginPath()
+  ctx.moveTo(anchor.x - 70, triggerY)
+  ctx.lineTo(anchor.x + 70, triggerY)
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.fillStyle = c.marker
+  ctx.font = '600 9px "SF Mono", ui-monospace, Menlo, monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText('RELEASE', anchor.x, triggerY + 16)
+
+  // 绳
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = c.cord
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(points[0].x, points[0].y)
+  for (let i = 1; i < points.length - 1; i++) {
+    const midX = (points[i].x + points[i + 1].x) / 2
+    const midY = (points[i].y + points[i + 1].y) / 2
+    ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY)
+  }
+  ctx.lineTo(bead.x, bead.y)
+  ctx.stroke()
+
+  // 灯座
+  ctx.fillStyle = c.lamp
+  ctx.beginPath()
+  ctx.arc(anchor.x, anchor.y, 15, Math.PI, 0)
+  ctx.closePath()
+  ctx.fill()
+
+  // 拉珠:待命 = 底色 + 描边环;蓄势(过线)= 靛蓝实心
+  const armed = isArmed()
+  ctx.beginPath()
+  ctx.arc(bead.x, bead.y, beadRadius, 0, Math.PI * 2)
+  if (armed) {
+    ctx.fillStyle = c.armed
+    ctx.fill()
+  } else {
+    ctx.fillStyle = c.bead
+    ctx.fill()
+    ctx.lineWidth = 2.5
+    ctx.strokeStyle = c.beadRing
+    ctx.stroke()
+  }
+}
+
+let statusCache = null
+function setStatus(html) {
+  if (html === statusCache) return
+  statusCache = html
+  statusEl.innerHTML = html
+}
+
+// === render ==================================================================
+function render(now) {
+  let until = animatedUntilTime ?? now
+  let steps = Math.floor((now - until) / msPerStep)
+  if (steps > 64) { steps = 64; until = now - 64 * msPerStep }
+  until += steps * msPerStep
+
+  for (let i = 0; i < steps; i++) physicsStep()
+
+  if (steps > 0) {
+    let maxV = 0
+    for (const p of points) maxV = Math.max(maxV, Math.abs(p.x - p.oldX), Math.abs(p.y - p.oldY))
+    quietFrames = maxV < SLEEP_EPSILON ? quietFrames + 1 : 0
+  }
+
+  draw()
+
+  const still = dragging != null || quietFrames < QUIET_FRAMES_TO_SLEEP
+  setStatus(
+    isArmed() ? '<b>松手切换!</b>'
+    : dragging ? `再拉 ${Math.max(0, Math.ceil(PULL_THRESHOLD - currentPull()))}px 过线`
+    : `拉绳过虚线松手切换 · ${dark ? '灯灭' : '灯亮'} · sim ${still ? '<b>running</b>' : 'idle'}`)
+  animatedUntilTime = still ? until : null
+  return still
+}
+
+// === theme ===================================================================
+function toggleTheme() {
+  dark = !dark
+  if (dark) document.documentElement.dataset.theme = 'dark'
+  else delete document.documentElement.dataset.theme
+}
+
+// === events ==================================================================
+function pointerPos(e) {
+  const r = canvas.getBoundingClientRect()
+  return { x: e.clientX - r.left, y: e.clientY - r.top }
+}
+function wake() { quietFrames = 0; scheduleRender() }
+
+canvas.addEventListener('pointerdown', e => {
+  const pos = pointerPos(e)
+  if (Math.hypot(bead.x - pos.x, bead.y - pos.y) > hitRadius) return
+  dragging = { pointerId: e.pointerId, dx: bead.x - pos.x, dy: bead.y - pos.y }
+  bead.dragPin = true
+  samples = [{ x: pos.x, y: pos.y, time: performance.now() }]
+  canvas.setPointerCapture(e.pointerId)
+  canvas.classList.add('drag')
+  e.preventDefault()
+  wake()
+}, { passive: false })
+
+canvas.addEventListener('pointermove', e => {
+  if (!dragging || e.pointerId !== dragging.pointerId) return
+  const pos = pointerPos(e)
+  let tx = pos.x + dragging.dx
+  let ty = pos.y + dragging.dy
+  // rubber-band:超过自由行程后,超出部分只跟随 20%
+  const dx = tx - anchor.x, dy = ty - anchor.y
+  const len = Math.hypot(dx, dy) || 1e-4
+  const maxFree = ropeLen + FREE_PULL
+  if (len > maxFree) {
+    const eff = maxFree + (len - maxFree) * 0.2
+    tx = anchor.x + dx / len * eff
+    ty = anchor.y + dy / len * eff
+  }
+  pinAt(bead,
+    clamp(tx, 14, canvas.clientWidth - 14),
+    clamp(ty, 14, canvas.clientHeight - 14))
+  samples.push({ x: pos.x, y: pos.y, time: performance.now() })
+  if (samples.length > 20) samples.shift()
+  e.preventDefault()
+  wake()
+}, { passive: false })
+
+function endDrag(e) {
+  if (!dragging || e.pointerId !== dragging.pointerId) return
+  const fire = isArmed()
+  const now = performance.now()
+  let i = samples.length - 1
+  while (i > 0 && now - samples[i].time <= 100) i--
+  const last = samples[samples.length - 1]
+  const dt = now - samples[i].time
+  if (dt > 16 && last) {
+    const vx = clamp((last.x - samples[i].x) / dt * msPerStep, -MAX_THROW, MAX_THROW)
+    const vy = clamp((last.y - samples[i].y) / dt * msPerStep, -MAX_THROW, MAX_THROW)
+    bead.oldX = bead.x - vx
+    bead.oldY = bead.y - vy
+  }
+  bead.dragPin = false
+  dragging = null
+  samples = []
+  canvas.classList.remove('drag')
+  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
+  if (fire) toggleTheme()
+  wake()
+}
+canvas.addEventListener('pointerup', endDrag)
+canvas.addEventListener('pointercancel', endDrag)
+
+window.addEventListener('resize', () => { resizeCanvas(); wake() })
+document.getElementById('reset').addEventListener('click', () => { initCord(); wake() })
+
+// === boot ====================================================================
+resizeCanvas()
+initCord()
+scheduleRender()
+</script>
+</body>
+</html>

@@ -1,0 +1,1712 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>iOS 27 Dock App Open / Close · 3×3 Mesh Study</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --ink-soft: #3a3a3a; --ink-dim: #9a9a9a;
+    --line: #e3e2df; --bg: #f7f6f4; --panel: #ffffff;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 var(--sans);
+    display: flex;
+    min-height: 100dvh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* stage — the phone owns the full left side, centered */
+  #stage {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  /* control panel — right sidebar, same structure as the Horizon Orb study */
+  #panel {
+    width: 272px;
+    height: 100dvh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    padding: 20px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  #panel h2 { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  #panel .sub { font-size: 11px; color: var(--ink-dim); margin-bottom: 16px; }
+
+  .row { display: flex; align-items: center; }
+  .row.opt { flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 10px; }
+  .lab { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .opts { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: flex-start; }
+
+  .opts button {
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--ink-dim);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 6px 13px;
+    transition: .15s;
+  }
+
+  .opts button:hover { color: var(--ink); }
+  .opts button:active { transform: scale(.96); }
+
+  .opts button.on,
+  .opts button[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: #c9c8c3;
+    background: var(--panel);
+  }
+
+  .opts button:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  /* tuning sliders + readout — below hairline dividers */
+  .tune {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .srow { display: flex; align-items: center; gap: 10px; }
+  .srow label { font-size: 12.5px; color: var(--ink-soft); flex: 0 0 78px; }
+  .srow input[type=range] { flex: 1; min-width: 0; accent-color: var(--ink); height: 3px; cursor: pointer; }
+  .srow .pv { font-family: var(--mono); font-size: 12px; flex: 0 0 36px; text-align: right; color: var(--ink); }
+
+  #readout {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--ink-dim);
+  }
+
+  #screen {
+    position: relative;
+    width: min(402px, 100%, calc((100dvh - 48px) * 402 / 874));
+    aspect-ratio: 402 / 874;
+    overflow: hidden;
+    isolation: isolate;
+    border-radius: 13.6816% / 6.2929%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  #home {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    transform-origin: 50% 48%;
+    will-change: transform, filter, opacity;
+    background: #eceae5;
+  }
+
+  .launchIcon {
+    position: absolute;
+    z-index: 3;
+    cursor: pointer;
+    outline: none;
+    will-change: opacity, transform;
+  }
+
+  #dock .launchIcon {
+    top: 20.833333%;
+    width: 17.391304%;
+    height: 57.142857%;
+  }
+
+  #dock .launchIcon:nth-child(1) { left: 5.434783%; }
+  #dock .launchIcon:nth-child(2) { left: 29.347826%; }
+  #dock .launchIcon:nth-child(3) { left: 53.260870%; }
+  #dock .launchIcon:nth-child(4) { left: 77.173913%; }
+
+  /* home grid — positions mirror IOS27_PHONE_PROFILE.iconFrames[4..11] */
+  #grid {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    will-change: opacity, transform;
+  }
+
+  #grid .launchIcon {
+    width: 15.920398%;
+    height: 7.322654%;
+    pointer-events: auto;
+  }
+
+  #grid .iconLabel {
+    display: block;
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 6px);
+    transform: translateX(-50%);
+    font-size: 10px;
+    line-height: 1;
+    color: rgba(26,26,26,.65);
+    letter-spacing: .01em;
+    white-space: nowrap;
+  }
+
+  .launchIcon:focus-visible .iconTile {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  .iconTile {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 23%;
+    background: var(--icon, #6858ee);
+    transition: transform 90ms ease-out;
+  }
+
+  .launchIcon:active .iconTile { transform: scale(.89); }
+
+  .iconTile::before,
+  .iconTile::after {
+    content: "";
+    position: absolute;
+    border: 3px solid rgba(255,255,255,.94);
+    border-radius: 50%;
+  }
+
+  .iconTile::before {
+    width: 37%;
+    height: 37%;
+    left: 22%;
+    top: 21%;
+  }
+
+  .iconTile::after {
+    width: 31%;
+    height: 31%;
+    right: 20%;
+    bottom: 20%;
+  }
+
+  .launchIcon[data-glyph="lines"] .iconTile::before {
+    left: 22%;
+    right: 22%;
+    top: 35%;
+    width: auto;
+    height: 4px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255,255,255,.95);
+    box-shadow: 0 11px 0 rgba(255,255,255,.72);
+  }
+
+  .launchIcon[data-glyph="lines"] .iconTile::after {
+    right: 24%;
+    bottom: 24%;
+    width: 9px;
+    height: 9px;
+    border-width: 2px;
+  }
+
+  .launchIcon[data-glyph="disc"] .iconTile::before {
+    left: 28%;
+    top: 28%;
+    width: 44%;
+    height: 44%;
+    border: 0;
+    background: rgba(255,255,255,.94);
+  }
+
+  .launchIcon[data-glyph="disc"] .iconTile::after {
+    right: 32%;
+    bottom: 32%;
+    width: 18%;
+    height: 18%;
+    border: 0;
+    background: var(--icon, #ff8a61);
+  }
+
+  .launchIcon[data-glyph="square"] .iconTile::before {
+    left: 27%;
+    top: 27%;
+    width: 46%;
+    height: 46%;
+    border: 3px solid rgba(255,255,255,.95);
+    border-radius: 10px;
+    transform: rotate(12deg);
+  }
+
+  .launchIcon[data-glyph="square"] .iconTile::after {
+    right: 25%;
+    bottom: 23%;
+    width: 12%;
+    height: 12%;
+    border: 0;
+    background: rgba(255,255,255,.95);
+  }
+
+  .launchIcon[data-glyph="dot"] .iconTile::before {
+    left: 30%;
+    top: 30%;
+    width: 40%;
+    height: 40%;
+    border: 0;
+    background: rgba(255,255,255,.94);
+  }
+
+  .launchIcon[data-glyph="dot"] .iconTile::after { display: none; }
+
+  .launchIcon[data-glyph="ring"] .iconTile::before {
+    left: 28%;
+    top: 28%;
+    width: 44%;
+    height: 44%;
+  }
+
+  .launchIcon[data-glyph="ring"] .iconTile::after { display: none; }
+
+  .launchIcon[data-glyph="bars"] .iconTile::before {
+    left: 30%;
+    top: 26%;
+    width: 12%;
+    height: 48%;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255,255,255,.94);
+  }
+
+  .launchIcon[data-glyph="bars"] .iconTile::after {
+    right: 30%;
+    bottom: 26%;
+    width: 12%;
+    height: 30%;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255,255,255,.94);
+  }
+
+  .launchIcon[data-glyph="cross"] .iconTile::before {
+    left: 24%;
+    top: 46%;
+    width: 52%;
+    height: 8%;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255,255,255,.94);
+  }
+
+  .launchIcon[data-glyph="cross"] .iconTile::after {
+    left: 46%;
+    top: 24%;
+    width: 8%;
+    height: 52%;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255,255,255,.94);
+  }
+
+  .iconLabel {
+    display: none;
+  }
+
+  #dock {
+    position: absolute;
+    left: 4.228856%;
+    top: 85.812357%;
+    width: 91.542289%;
+    height: 12.814645%;
+    z-index: 2;
+    will-change: opacity, transform;
+  }
+
+  #dock::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(26,26,26,.08);
+    border-radius: 46px;
+    background: rgba(255,255,255,.6);
+    pointer-events: none;
+  }
+
+  #meshCanvas {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+  }
+
+  #homeIndicator {
+    appearance: none;
+    position: absolute;
+    z-index: 20;
+    left: 50%;
+    bottom: 0;
+    width: 38%;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    transform: translateX(-50%);
+    opacity: 0;
+    will-change: opacity;
+    pointer-events: none;
+    cursor: pointer;
+  }
+
+  #homeIndicator::before {
+    content: "";
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    bottom: 8px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(26,26,26,.85);
+    transition: transform 80ms ease-out, opacity 80ms ease-out;
+  }
+
+  #homeIndicator:active::before {
+    transform: scaleX(.88);
+    opacity: .76;
+  }
+
+  #hint {
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    top: 4.1%;
+    text-align: center;
+    color: rgba(26,26,26,.55);
+    font-size: clamp(10px, 3vw, 12px);
+    letter-spacing: .01em;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  /* narrow windows / phones — stack: stage on top, panel below, page scrolls */
+  @media (max-width: 760px) {
+    body { flex-direction: column; overflow-y: auto; }
+    #stage {
+      width: 100%;
+      flex: 0 0 auto;
+      height: 58svh;
+      padding-top: max(6px, env(safe-area-inset-top));
+    }
+    #screen { width: min(402px, 100%, calc((58svh - 36px) * 402 / 874)); }
+    #panel {
+      width: 100%;
+      height: auto;
+      overflow: visible;
+      border-left: 0;
+      border-top: 1px solid var(--line);
+      padding-left: max(18px, env(safe-area-inset-left));
+      padding-right: max(18px, env(safe-area-inset-right));
+    }
+    .opts button { min-height: 44px; padding: 9px 12px; }
+    .srow { min-height: 44px; }
+    .srow input[type=range] { height: 28px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <section id="screen" aria-label="iOS 应用打开动画演示">
+    <div id="home">
+      <div id="grid">
+        <div class="launchIcon" data-app="4" data-glyph="ring" role="button" aria-label="打开 Drift 应用" tabindex="0"
+             style="--icon:#5a8dee;left:9.2040%;top:10.5263%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Drift</span>
+        </div>
+        <div class="launchIcon" data-app="5" data-glyph="dot" role="button" aria-label="打开 Bloom 应用" tabindex="0"
+             style="--icon:#e4568c;left:31.0945%;top:10.5263%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Bloom</span>
+        </div>
+        <div class="launchIcon" data-app="6" data-glyph="bars" role="button" aria-label="打开 Grove 应用" tabindex="0"
+             style="--icon:#3fa66a;left:52.9851%;top:10.5263%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Grove</span>
+        </div>
+        <div class="launchIcon" data-app="7" data-glyph="lines" role="button" aria-label="打开 Quill 应用" tabindex="0"
+             style="--icon:#8a6cf0;left:74.8756%;top:10.5263%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Quill</span>
+        </div>
+        <div class="launchIcon" data-app="8" data-glyph="rings" role="button" aria-label="打开 Orbit 应用" tabindex="0"
+             style="--icon:#2fb3c9;left:9.2040%;top:22.4256%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Orbit</span>
+        </div>
+        <div class="launchIcon" data-app="9" data-glyph="square" role="button" aria-label="打开 Dune 应用" tabindex="0"
+             style="--icon:#e0a03c;left:31.0945%;top:22.4256%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Dune</span>
+        </div>
+        <div class="launchIcon" data-app="10" data-glyph="cross" role="button" aria-label="打开 Nova 应用" tabindex="0"
+             style="--icon:#ef6a4e;left:52.9851%;top:22.4256%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Nova</span>
+        </div>
+        <div class="launchIcon" data-app="11" data-glyph="disc" role="button" aria-label="打开 Slate 应用" tabindex="0"
+             style="--icon:#6b7787;left:74.8756%;top:22.4256%">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Slate</span>
+        </div>
+      </div>
+
+      <div id="dock">
+        <div class="launchIcon" data-app="0" data-glyph="rings" role="button" aria-label="打开 Dock 中的 Flow 应用" tabindex="0"
+             style="--icon:#6958ee">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Flow</span>
+        </div>
+        <div class="launchIcon" data-app="1" data-glyph="lines" role="button" aria-label="打开 Dock 中的 Pulse 应用" tabindex="0"
+             style="--icon:#f04f79">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Pulse</span>
+        </div>
+        <div class="launchIcon" data-app="2" data-glyph="disc" role="button" aria-label="打开 Dock 中的 Tide 应用" tabindex="0"
+             style="--icon:#25aeca">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Tide</span>
+        </div>
+        <div class="launchIcon" data-app="3" data-glyph="square" role="button" aria-label="打开 Dock 中的 Ember 应用" tabindex="0"
+             style="--icon:#ff7b51">
+          <div class="iconTile"></div>
+          <span class="iconLabel">Ember</span>
+        </div>
+      </div>
+    </div>
+
+    <canvas id="meshCanvas" role="img" aria-label="由 3×3 控制点网格变形成全屏的应用色块"></canvas>
+    <button id="homeIndicator" type="button" aria-label="退出到主屏幕"></button>
+    <div id="hint">点击任意 App 打开</div>
+  </section>
+</div>
+
+<div id="panel">
+  <h2>iOS 27 · App Open / Close</h2>
+  <div class="sub">点按图标 · 3×3 网格形变 · 弹簧收敛 · 主屏俯冲 3×</div>
+  <div class="row opt">
+    <span class="lab">播放</span>
+    <div class="opts">
+      <button id="replay" type="button">重新播放</button>
+    </div>
+  </div>
+  <div class="tune">
+    <div class="srow">
+      <label>打开响应</label>
+      <input id="sOpen" type="range" min="0.10" max="0.60" step="0.01" value="0.24">
+      <span class="pv" id="vOpen">0.24</span>
+    </div>
+    <div class="srow">
+      <label>关闭响应</label>
+      <input id="sClose" type="range" min="0.10" max="0.80" step="0.002" value="0.336">
+      <span class="pv" id="vClose">0.34</span>
+    </div>
+    <div class="srow">
+      <label>阻尼 <span style="color:var(--ink-dim)">ζ</span></label>
+      <input id="sZeta" type="range" min="0.30" max="5.00" step="0.02" value="2.00">
+      <span class="pv" id="vZeta">2.00</span>
+    </div>
+    <div class="srow">
+      <label>速度</label>
+      <input id="sSpeed" type="range" min="0.10" max="1.50" step="0.05" value="1.00">
+      <span class="pv" id="vSpeed">1.00</span>
+    </div>
+  </div>
+  <div class="tune">
+    <span class="lab">状态</span>
+    <p id="readout" aria-live="polite">等待打开</p>
+    <div class="meta">iPhone 17 Pro · iOS 27.0 (24A5355p) · 402×874 pt</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const BASE_RESPONSE = 0.24;
+const CLOSE_RESPONSE = 0.336;
+const CORNER_RESET_DELAY = 0.06;
+const CLOSE_CORNER_RESET_DELAY = 0.12;
+const GRID_COORDS = [0, 0.5, 1];
+const DEFAULT_TIME_SCALE = 1.0;
+const IOS27_PHONE_PROFILE = Object.freeze({
+  device: "iPhone 17 Pro",
+  runtime: "iOS 27.0",
+  build: "24A5355p",
+  width: 402,
+  height: 874,
+  displayScale: 3,
+  displayCornerRadius: 55,
+  dockFrame: Object.freeze({ x: 17, y: 750, width: 368, height: 112 }),
+  iconFrames: Object.freeze([
+    Object.freeze({ x: 37, y: 773 + 1 / 3, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 125, y: 773 + 1 / 3, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 213, y: 773 + 1 / 3, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 301, y: 773 + 1 / 3, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 37, y: 92, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 125, y: 92, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 213, y: 92, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 301, y: 92, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 37, y: 196, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 125, y: 196, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 213, y: 196, width: 64, height: 64, radius: 14.72 }),
+    Object.freeze({ x: 301, y: 196, width: 64, height: 64, radius: 14.72 })
+  ])
+});
+const APPS = [
+  {
+    name: "Flow",
+    icon: "#6958ee",
+    glyph: "rings",
+    header: ["#7564f4", "#4935c8"],
+    body: ["#f2f1f8", "#e7e6f0"],
+    accent: "#6d5cf1",
+    cards: ["#ffffff", "#cbc5ff", "#ffd4b8", "#bce7e0"]
+  },
+  {
+    name: "Pulse",
+    icon: "#f04f79",
+    glyph: "lines",
+    header: ["#ff7899", "#b82062"],
+    body: ["#fff2f6", "#f7e4eb"],
+    accent: "#e44474",
+    cards: ["#ffffff", "#ffc1d1", "#ffd7aa", "#e2c8ff"]
+  },
+  {
+    name: "Tide",
+    icon: "#25aeca",
+    glyph: "disc",
+    header: ["#53d9d2", "#0b76b2"],
+    body: ["#effafb", "#deeff3"],
+    accent: "#169ab5",
+    cards: ["#ffffff", "#b8ece8", "#bee0ff", "#ffe0b8"]
+  },
+  {
+    name: "Ember",
+    icon: "#ff7b51",
+    glyph: "square",
+    header: ["#ffad62", "#c73555"],
+    body: ["#fff5ed", "#f5e5df"],
+    accent: "#eb654d",
+    cards: ["#ffffff", "#ffd1b8", "#ffc1ca", "#d8c9ff"]
+  },
+  {
+    name: "Drift",
+    icon: "#5a8dee",
+    glyph: "ring",
+    header: ["#6f9bf0", "#3d6fd6"],
+    body: ["#f0f4fc", "#e3ebf7"],
+    accent: "#4a7de4",
+    cards: ["#ffffff", "#c3d4f7", "#ffdcb8", "#c2e7db"]
+  },
+  {
+    name: "Bloom",
+    icon: "#e4568c",
+    glyph: "dot",
+    header: ["#ee7ba6", "#c93a72"],
+    body: ["#fdf1f6", "#f6e3ec"],
+    accent: "#d84880",
+    cards: ["#ffffff", "#f7c6d9", "#ffd9b0", "#d9c9f5"]
+  },
+  {
+    name: "Grove",
+    icon: "#3fa66a",
+    glyph: "bars",
+    header: ["#57b87e", "#2c8a52"],
+    body: ["#f0f8f3", "#e2f0e8"],
+    accent: "#379457",
+    cards: ["#ffffff", "#c2e5d0", "#f5e2b8", "#c4ddf2"]
+  },
+  {
+    name: "Quill",
+    icon: "#8a6cf0",
+    glyph: "lines",
+    header: ["#9d84f3", "#6d4ed8"],
+    body: ["#f4f2fc", "#e9e5f7"],
+    accent: "#7c5ce8",
+    cards: ["#ffffff", "#d5caf7", "#ffd6c2", "#c2e4e0"]
+  },
+  {
+    name: "Orbit",
+    icon: "#2fb3c9",
+    glyph: "rings",
+    header: ["#4cc2d6", "#1d8fa6"],
+    body: ["#eff8fa", "#e0eef2"],
+    accent: "#22a0b8",
+    cards: ["#ffffff", "#bfe6ee", "#cfe0f7", "#ffe3bd"]
+  },
+  {
+    name: "Dune",
+    icon: "#e0a03c",
+    glyph: "square",
+    header: ["#e8b258", "#c0842a"],
+    body: ["#faf5ec", "#f2e9da"],
+    accent: "#d3942f",
+    cards: ["#ffffff", "#f2ddb5", "#f7c9b2", "#cfe0d4"]
+  },
+  {
+    name: "Nova",
+    icon: "#ef6a4e",
+    glyph: "cross",
+    header: ["#f28268", "#d34f34"],
+    body: ["#fcf2ef", "#f5e5e0"],
+    accent: "#e35a3e",
+    cards: ["#ffffff", "#f7cabd", "#f5ddb0", "#c9d9f2"]
+  },
+  {
+    name: "Slate",
+    icon: "#6b7787",
+    glyph: "disc",
+    header: ["#828da0", "#57637a"],
+    body: ["#f2f4f6", "#e6e9ed"],
+    accent: "#5f6c82",
+    cards: ["#ffffff", "#d1d8e0", "#e7d8c4", "#c9dbd4"]
+  }
+];
+
+const screen = document.getElementById("screen");
+const home = document.getElementById("home");
+const icons = [...document.querySelectorAll(".launchIcon")]
+  .sort((a, b) => Number(a.dataset.app) - Number(b.dataset.app));
+let activeIcon = icons[0];
+let activeAppIndex = 0;
+const dock = document.getElementById("dock");
+const grid = document.getElementById("grid");
+const canvas = document.getElementById("meshCanvas");
+const ctx = canvas.getContext("2d", { alpha: true });
+const replayButton = document.getElementById("replay");
+const hint = document.getElementById("hint");
+const readout = document.getElementById("readout");
+const homeIndicator = document.getElementById("homeIndicator");
+
+const width = IOS27_PHONE_PROFILE.width;
+const height = IOS27_PHONE_PROFILE.height;
+let dpr = 1;
+let renderScaleX = 1;
+let renderScaleY = 1;
+let mesh = [];
+let sourceFrame = { ...IOS27_PHONE_PROFILE.iconFrames[0] };
+let phase = "idle";
+let simElapsed = 0;
+let lastFrame = 0;
+let raf = 0;
+let timeScale = DEFAULT_TIME_SCALE;
+let replayTimer = 0;
+let openResponse = BASE_RESPONSE;
+let closeResponse = CLOSE_RESPONSE;
+let springZeta = 2.0;
+let activeBoundsResponse = BASE_RESPONSE;
+
+const boundsSpring = { value: 0, velocity: 0, target: 0 };
+const cornerSpring = {
+  value: IOS27_PHONE_PROFILE.iconFrames[0].radius,
+  velocity: 0,
+  target: IOS27_PHONE_PROFILE.iconFrames[0].radius
+};
+const visualSprings = {
+  homeScale: { value: 1, velocity: 0, target: 3.0, response: .34, delay: 0 },
+  homeDim: { value: 1, velocity: 0, target: .62, response: .30, delay: 0 },
+  homeOpacity: { value: 1, velocity: 0, target: .74, response: .28, delay: .02 },
+  dockOpacity: { value: 1, velocity: 0, target: 0, response: .16, delay: 0 },
+  contentMix: { value: 0, velocity: 0, target: 1, response: .105, delay: .006 },
+  indicatorOpacity: { value: 0, velocity: 0, target: 1, response: .18, delay: .12 }
+};
+
+let appTexture = document.createElement("canvas");
+let iconTexture = document.createElement("canvas");
+let mixedTexture = document.createElement("canvas");
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const clamp01 = value => clamp(value, 0, 1);
+const mix = (a, b, amount) => a + (b - a) * amount;
+
+function roundedRectPath(context, x, y, w, h, radius) {
+  const r = Math.min(radius, w * 0.5, h * 0.5);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + w - r, y);
+  context.quadraticCurveTo(x + w, y, x + w, y + r);
+  context.lineTo(x + w, y + h - r);
+  context.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  context.lineTo(x + r, y + h);
+  context.quadraticCurveTo(x, y + h, x, y + h - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
+}
+
+function createTextures() {
+  const textureWidth = Math.round(width * 2);
+  const textureHeight = Math.round(textureWidth * height / width);
+  const theme = APPS[activeAppIndex];
+
+  appTexture.width = textureWidth;
+  appTexture.height = textureHeight;
+  iconTexture.width = textureWidth;
+  iconTexture.height = textureHeight;
+  mixedTexture.width = textureWidth;
+  mixedTexture.height = textureHeight;
+
+  const appCtx = appTexture.getContext("2d");
+  const iconCtx = iconTexture.getContext("2d");
+  const sx = textureWidth / width;
+  const sy = textureHeight / height;
+
+  appCtx.save();
+  appCtx.scale(sx, sy);
+
+  appCtx.fillStyle = theme.header[1];
+  appCtx.fillRect(0, 0, width, height * .31);
+  appCtx.fillStyle = theme.body[0];
+  appCtx.fillRect(0, height * .31, width, height * .69);
+
+  appCtx.fillStyle = "rgba(255,255,255,.28)";
+  roundedRectPath(appCtx, width * .075, height * .078, width * .18, height * .018, height * .009);
+  appCtx.fill();
+
+  appCtx.fillStyle = "rgba(255,255,255,.92)";
+  roundedRectPath(appCtx, width * .075, height * .123, width * .58, height * .048, 13);
+  appCtx.fill();
+
+  appCtx.fillStyle = "rgba(255,255,255,.24)";
+  roundedRectPath(appCtx, width * .075, height * .198, width * .85, height * .075, 18);
+  appCtx.fill();
+
+  const cards = [
+    { y: .355, h: .165, color: theme.cards[0] },
+    { y: .548, h: .105, color: theme.cards[1] },
+    { y: .681, h: .105, color: theme.cards[2] },
+    { y: .814, h: .105, color: theme.cards[3] }
+  ];
+
+  cards.forEach((card, index) => {
+    appCtx.fillStyle = card.color;
+    roundedRectPath(appCtx, width * .06, height * card.y, width * .88, height * card.h, 22);
+    appCtx.fill();
+    appCtx.lineWidth = 1;
+    appCtx.strokeStyle = "rgba(26,26,26,.08)";
+    appCtx.stroke();
+
+    appCtx.fillStyle = index === 0 ? theme.accent : "rgba(53,48,79,.22)";
+    roundedRectPath(
+      appCtx,
+      width * .105,
+      height * (card.y + .034),
+      width * (index === 0 ? .22 : .14),
+      height * .018,
+      8
+    );
+    appCtx.fill();
+
+    appCtx.fillStyle = "rgba(53,48,79,.13)";
+    roundedRectPath(
+      appCtx,
+      width * .105,
+      height * (card.y + .073),
+      width * (index === 0 ? .62 : .53),
+      height * .014,
+      7
+    );
+    appCtx.fill();
+  });
+
+  appCtx.restore();
+
+  iconCtx.save();
+  iconCtx.fillStyle = theme.icon;
+  iconCtx.fillRect(0, 0, textureWidth, textureHeight);
+
+  const markRadius = textureWidth * .17;
+  const centerY = textureHeight * .5;
+  iconCtx.lineWidth = textureWidth * .052;
+  iconCtx.strokeStyle = "rgba(255,255,255,.96)";
+  iconCtx.fillStyle = "rgba(255,255,255,.96)";
+
+  const glyph = theme.glyph;
+  if (glyph === "rings") {
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .43, textureHeight * .45, markRadius, 0, Math.PI * 2);
+    iconCtx.stroke();
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .61, textureHeight * .56, markRadius * .84, 0, Math.PI * 2);
+    iconCtx.stroke();
+  } else if (glyph === "lines") {
+    iconCtx.lineCap = "round";
+    iconCtx.beginPath();
+    iconCtx.moveTo(textureWidth * .25, centerY - textureWidth * .09);
+    iconCtx.lineTo(textureWidth * .75, centerY - textureWidth * .09);
+    iconCtx.moveTo(textureWidth * .25, centerY + textureWidth * .09);
+    iconCtx.lineTo(textureWidth * .64, centerY + textureWidth * .09);
+    iconCtx.stroke();
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .72, centerY + textureWidth * .09, textureWidth * .055, 0, Math.PI * 2);
+    iconCtx.stroke();
+  } else if (glyph === "disc") {
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .5, centerY, textureWidth * .22, 0, Math.PI * 2);
+    iconCtx.fill();
+    iconCtx.fillStyle = theme.icon;
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .5, centerY, textureWidth * .085, 0, Math.PI * 2);
+    iconCtx.fill();
+  } else if (glyph === "square") {
+    iconCtx.save();
+    iconCtx.translate(textureWidth * .5, centerY);
+    iconCtx.rotate(Math.PI / 15);
+    iconCtx.strokeRect(-textureWidth * .19, -textureWidth * .19, textureWidth * .38, textureWidth * .38);
+    iconCtx.restore();
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .67, centerY + textureWidth * .18, textureWidth * .05, 0, Math.PI * 2);
+    iconCtx.fill();
+  } else if (glyph === "dot") {
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .5, centerY, textureWidth * .2, 0, Math.PI * 2);
+    iconCtx.fill();
+  } else if (glyph === "ring") {
+    iconCtx.beginPath();
+    iconCtx.arc(textureWidth * .5, centerY, textureWidth * .22, 0, Math.PI * 2);
+    iconCtx.stroke();
+  } else if (glyph === "bars") {
+    iconCtx.lineCap = "round";
+    iconCtx.beginPath();
+    iconCtx.moveTo(textureWidth * .38, textureHeight * .3);
+    iconCtx.lineTo(textureWidth * .38, textureHeight * .68);
+    iconCtx.moveTo(textureWidth * .62, textureHeight * .46);
+    iconCtx.lineTo(textureWidth * .62, textureHeight * .68);
+    iconCtx.stroke();
+  } else {
+    iconCtx.lineCap = "round";
+    iconCtx.beginPath();
+    iconCtx.moveTo(textureWidth * .28, centerY);
+    iconCtx.lineTo(textureWidth * .72, centerY);
+    iconCtx.moveTo(textureWidth * .5, textureHeight * .28);
+    iconCtx.lineTo(textureWidth * .5, textureHeight * .72);
+    iconCtx.stroke();
+  }
+  iconCtx.restore();
+}
+
+function measureSourceFrame() {
+  sourceFrame = { ...IOS27_PHONE_PROFILE.iconFrames[activeAppIndex] };
+}
+
+function normalizedGenieCurve(t, selector) {
+  return selector < 0 ? 1 - Math.sqrt(1 - t) : Math.sqrt(t);
+}
+
+function genieAmount(active, initialVelocity = { x: 0, y: 0 }) {
+  const projectedWindowCenter = {
+    x: width * .5 + initialVelocity.x * .15,
+    y: height * .5 + initialVelocity.y * .15
+  };
+  const iconCenter = {
+    x: sourceFrame.x + sourceFrame.width * .5,
+    y: sourceFrame.y + sourceFrame.height * .5
+  };
+
+  // SpringBoard forces the horizontal component to zero on iPhone.
+  let y = clamp(2 * (iconCenter.y - projectedWindowCenter.y) / height, -1, 1);
+  if (y < 0) y *= .75;
+  if (active) y = -y;
+  return { x: 0, y };
+}
+
+function responseForVertex(column, row, baseResponse = BASE_RESPONSE, active = false) {
+  const amount = genieAmount(active);
+  const selectorX = active ? amount.x : -amount.x;
+  const selectorY = active ? amount.y : -amount.y;
+  const u = normalizedGenieCurve(column / 2, selectorX);
+  const v = normalizedGenieCurve(row / 2, selectorY);
+
+  // Standard fullscreen iPhone has a zero mesh-container outset.
+  return (
+    baseResponse *
+    (1 + .5 * amount.x * (1 - 2 * u)) *
+    (1 + .5 * amount.y * (1 - 2 * v))
+  );
+}
+
+function initializeMesh() {
+  measureSourceFrame();
+  mesh = [];
+
+  for (let row = 0; row < 3; row++) {
+    for (let column = 0; column < 3; column++) {
+      const u = GRID_COORDS[column];
+      const v = GRID_COORDS[row];
+      const x = sourceFrame.x + sourceFrame.width * u;
+      const y = sourceFrame.y + sourceFrame.height * v;
+      mesh.push({
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        targetX: mix(0, width, u),
+        targetY: mix(0, height, v),
+        responseX: responseForVertex(column, row, openResponse, false),
+        responseY: responseForVertex(column, row, openResponse, false)
+      });
+    }
+  }
+
+  boundsSpring.value = 0;
+  boundsSpring.velocity = 0;
+  boundsSpring.target = 0;
+  cornerSpring.value = sourceFrame.radius;
+  cornerSpring.velocity = 0;
+  cornerSpring.target = sourceFrame.radius;
+  home.style.transformOrigin =
+    `${((sourceFrame.x + sourceFrame.width * .5) / width) * 100}% ` +
+    `${((sourceFrame.y + sourceFrame.height * .5) / height) * 100}%`;
+  resetVisualSprings();
+}
+
+function resizeCanvas() {
+  const rect = screen.getBoundingClientRect();
+  renderScaleX = rect.width / width;
+  renderScaleY = rect.height / height;
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+  ctx.setTransform(dpr * renderScaleX, 0, 0, dpr * renderScaleY, 0, 0);
+  createTextures();
+
+  if (phase === "idle") {
+    initializeMesh();
+    render();
+    return;
+  }
+
+  render();
+}
+
+function stepCriticalSpring(state, target, response, dt, valueKey, velocityKey) {
+  const omega = (Math.PI * 2) / response;
+  const displacement = state[valueKey] - target;
+  const velocity = state[velocityKey];
+
+  if (springZeta > 1.001) {
+    // overdamped closed-form — the REAL SpringBoard open spring (mass 2.5 /
+    // stiffness 1500 / damping 500 → ζ ≈ 4.08, fast rise, zero overshoot).
+    const zeta = springZeta;
+    const s = omega * Math.sqrt(zeta * zeta - 1);
+    const r1 = -zeta * omega + s;
+    const r2 = -zeta * omega - s;
+    const c1 = (velocity - r2 * displacement) / (r1 - r2);
+    const c2 = displacement - c1;
+    const e1 = Math.exp(r1 * dt);
+    const e2 = Math.exp(r2 * dt);
+    state[valueKey] = target + c1 * e1 + c2 * e2;
+    state[velocityKey] = c1 * r1 * e1 + c2 * r2 * e2;
+    return;
+  }
+
+  if (springZeta >= .999) {
+    const coefficient = velocity + omega * displacement;
+    const decay = Math.exp(-omega * dt);
+    state[valueKey] = target + (displacement + coefficient * dt) * decay;
+    state[velocityKey] = (velocity - omega * coefficient * dt) * decay;
+    return;
+  }
+
+  // underdamped closed-form so ζ < 1 gives a visible bounce
+  const zeta = springZeta;
+  const omegaD = omega * Math.sqrt(1 - zeta * zeta);
+  const decay = Math.exp(-zeta * omega * dt);
+  const cos = Math.cos(omegaD * dt);
+  const sin = Math.sin(omegaD * dt);
+  const b = (velocity + zeta * omega * displacement) / omegaD;
+  state[valueKey] = target + decay * (displacement * cos + b * sin);
+  state[velocityKey] =
+    decay * ((b * omegaD - zeta * omega * displacement) * cos -
+             (displacement * omegaD + zeta * omega * b) * sin);
+}
+
+function resetVisualSprings() {
+  visualSprings.homeScale.value = 1;
+  visualSprings.homeDim.value = 1;
+  visualSprings.homeOpacity.value = 1;
+  visualSprings.dockOpacity.value = 1;
+  visualSprings.contentMix.value = 0;
+  visualSprings.indicatorOpacity.value = 0;
+  Object.values(visualSprings).forEach(spring => {
+    spring.velocity = 0;
+  });
+  configureOpeningVisualSprings();
+}
+
+function configureSpring(spring, target, response, delay) {
+  spring.target = target;
+  spring.response = response;
+  spring.delay = delay;
+}
+
+function configureOpeningVisualSprings() {
+  configureSpring(visualSprings.homeScale, 3.0, .34, 0);
+  configureSpring(visualSprings.homeDim, .62, .30, 0);
+  configureSpring(visualSprings.homeOpacity, .74, .28, .02);
+  configureSpring(visualSprings.dockOpacity, 0, .16, 0);
+  configureSpring(visualSprings.contentMix, 1, .105, .006);
+  configureSpring(visualSprings.indicatorOpacity, 1, .18, .12);
+}
+
+function configureClosingVisualSprings() {
+  configureSpring(visualSprings.homeScale, 1, .34, 0);
+  configureSpring(visualSprings.homeDim, 1, .30, 0);
+  configureSpring(visualSprings.homeOpacity, 1, .28, 0);
+  configureSpring(visualSprings.dockOpacity, 1, .18, .045);
+  configureSpring(visualSprings.contentMix, 0, .15, .065);
+  configureSpring(visualSprings.indicatorOpacity, 0, .12, 0);
+}
+
+function stepVisualSprings(dt) {
+  Object.values(visualSprings).forEach(spring => {
+    if (simElapsed < spring.delay) return;
+    stepCriticalSpring(
+      spring,
+      spring.target,
+      spring.response,
+      dt,
+      "value",
+      "velocity"
+    );
+  });
+}
+
+function snapVisualSprings() {
+  Object.values(visualSprings).forEach(spring => {
+    spring.value = spring.target;
+    spring.velocity = 0;
+  });
+}
+
+function stepPhysics(dt) {
+  const steps = Math.max(1, Math.ceil(dt / 0.0025));
+  const h = dt / steps;
+
+  for (let step = 0; step < steps; step++) {
+    mesh.forEach(point => {
+      stepCriticalSpring(point, point.targetX, point.responseX, h, "x", "vx");
+      stepCriticalSpring(point, point.targetY, point.responseY, h, "y", "vy");
+    });
+
+    stepCriticalSpring(
+      boundsSpring,
+      boundsSpring.target,
+      activeBoundsResponse,
+      h,
+      "value",
+      "velocity"
+    );
+
+    const fullyRounded = Math.min(width, height) * .5;
+    const displayCornerRadius = IOS27_PHONE_PROFILE.displayCornerRadius;
+    const isClosing = phase === "closing";
+    const resetDelay = isClosing ? CLOSE_CORNER_RESET_DELAY : CORNER_RESET_DELAY;
+    cornerSpring.target =
+      simElapsed < resetDelay
+        ? fullyRounded
+        : isClosing
+          ? sourceFrame.radius
+          : displayCornerRadius;
+
+    stepCriticalSpring(
+      cornerSpring,
+      cornerSpring.target,
+      activeBoundsResponse,
+      h,
+      "value",
+      "velocity"
+    );
+
+    stepVisualSprings(h);
+    simElapsed += h;
+  }
+}
+
+function meshOutlinePath(radius) {
+  const outerIndices = [0, 1, 2, 5, 8, 7, 6, 3];
+  const cornerIndices = new Set([0, 2, 4, 6]);
+  const vertices = outerIndices.map(index => mesh[index]);
+  const incoming = [];
+  const outgoing = [];
+
+  for (let index = 0; index < vertices.length; index++) {
+    const vertex = vertices[index];
+    if (!cornerIndices.has(index)) {
+      incoming.push({ x: vertex.x, y: vertex.y });
+      outgoing.push({ x: vertex.x, y: vertex.y });
+      continue;
+    }
+
+    const previous = vertices[(index - 1 + vertices.length) % vertices.length];
+    const next = vertices[(index + 1) % vertices.length];
+    const previousLength = Math.hypot(previous.x - vertex.x, previous.y - vertex.y);
+    const nextLength = Math.hypot(next.x - vertex.x, next.y - vertex.y);
+    const trim = Math.min(radius, previousLength * .485, nextLength * .485);
+    const previousScale = previousLength > 0 ? trim / previousLength : 0;
+    const nextScale = nextLength > 0 ? trim / nextLength : 0;
+
+    incoming.push({
+      x: vertex.x + (previous.x - vertex.x) * previousScale,
+      y: vertex.y + (previous.y - vertex.y) * previousScale
+    });
+    outgoing.push({
+      x: vertex.x + (next.x - vertex.x) * nextScale,
+      y: vertex.y + (next.y - vertex.y) * nextScale
+    });
+  }
+
+  const path = new Path2D();
+  path.moveTo(outgoing[0].x, outgoing[0].y);
+
+  for (let step = 1; step <= vertices.length; step++) {
+    const index = step % vertices.length;
+    path.lineTo(incoming[index].x, incoming[index].y);
+    if (cornerIndices.has(index)) {
+      path.quadraticCurveTo(
+        vertices[index].x,
+        vertices[index].y,
+        outgoing[index].x,
+        outgoing[index].y
+      );
+    }
+  }
+
+  path.closePath();
+  return path;
+}
+
+function expandedTriangle(points, amount) {
+  const center = {
+    x: (points[0].x + points[1].x + points[2].x) / 3,
+    y: (points[0].y + points[1].y + points[2].y) / 3
+  };
+
+  return points.map(point => {
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const length = Math.hypot(dx, dy) || 1;
+    return {
+      x: point.x + dx / length * amount,
+      y: point.y + dy / length * amount
+    };
+  });
+}
+
+function drawTexturedTriangle(texture, source, destination) {
+  const denominator =
+    source[0].x * (source[1].y - source[2].y) +
+    source[1].x * (source[2].y - source[0].y) +
+    source[2].x * (source[0].y - source[1].y);
+
+  if (Math.abs(denominator) < 0.000001) return;
+
+  const a =
+    (destination[0].x * (source[1].y - source[2].y) +
+      destination[1].x * (source[2].y - source[0].y) +
+      destination[2].x * (source[0].y - source[1].y)) /
+    denominator;
+  const c =
+    (destination[0].x * (source[2].x - source[1].x) +
+      destination[1].x * (source[0].x - source[2].x) +
+      destination[2].x * (source[1].x - source[0].x)) /
+    denominator;
+  const e =
+    (destination[0].x * (source[1].x * source[2].y - source[2].x * source[1].y) +
+      destination[1].x * (source[2].x * source[0].y - source[0].x * source[2].y) +
+      destination[2].x * (source[0].x * source[1].y - source[1].x * source[0].y)) /
+    denominator;
+  const b =
+    (destination[0].y * (source[1].y - source[2].y) +
+      destination[1].y * (source[2].y - source[0].y) +
+      destination[2].y * (source[0].y - source[1].y)) /
+    denominator;
+  const d =
+    (destination[0].y * (source[2].x - source[1].x) +
+      destination[1].y * (source[0].x - source[2].x) +
+      destination[2].y * (source[1].x - source[0].x)) /
+    denominator;
+  const f =
+    (destination[0].y * (source[1].x * source[2].y - source[2].x * source[1].y) +
+      destination[1].y * (source[2].x * source[0].y - source[0].x * source[2].y) +
+      destination[2].y * (source[0].x * source[1].y - source[1].x * source[0].y)) /
+    denominator;
+
+  const clipTriangle = expandedTriangle(destination, .62);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(clipTriangle[0].x, clipTriangle[0].y);
+  ctx.lineTo(clipTriangle[1].x, clipTriangle[1].y);
+  ctx.lineTo(clipTriangle[2].x, clipTriangle[2].y);
+  ctx.closePath();
+  ctx.clip();
+  ctx.transform(a, b, c, d, e, f);
+  ctx.drawImage(texture, 0, 0);
+  ctx.restore();
+}
+
+function drawMeshTexture(texture, alpha) {
+  if (alpha <= 0.001) return;
+
+  const textureWidth = texture.width;
+  const textureHeight = texture.height;
+  const sourcePoint = (column, row) => ({
+    x: textureWidth * GRID_COORDS[column],
+    y: textureHeight * GRID_COORDS[row]
+  });
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  for (let row = 0; row < 2; row++) {
+    for (let column = 0; column < 2; column++) {
+      const topLeft = row * 3 + column;
+      const topRight = topLeft + 1;
+      const bottomLeft = (row + 1) * 3 + column;
+      const bottomRight = bottomLeft + 1;
+
+      drawTexturedTriangle(
+        texture,
+        [
+          sourcePoint(column, row),
+          sourcePoint(column + 1, row),
+          sourcePoint(column + 1, row + 1)
+        ],
+        [mesh[topLeft], mesh[topRight], mesh[bottomRight]]
+      );
+
+      drawTexturedTriangle(
+        texture,
+        [
+          sourcePoint(column, row),
+          sourcePoint(column + 1, row + 1),
+          sourcePoint(column, row + 1)
+        ],
+        [mesh[topLeft], mesh[bottomRight], mesh[bottomLeft]]
+      );
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawMeshOverlay() {
+  const rows = [
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8]
+  ];
+  const columns = [
+    [0, 3, 6],
+    [1, 4, 7],
+    [2, 5, 8]
+  ];
+  const paths = [...rows, ...columns];
+  const scale = width / IOS27_PHONE_PROFILE.width;
+  const markerRadius = Math.max(5.2, 6 * scale);
+  const screenCornerRadius = IOS27_PHONE_PROFILE.displayCornerRadius;
+  const edgePadding = Math.max(markerRadius + 1.5, screenCornerRadius * .42);
+  const overlayPoints = mesh.map(point => ({
+    x: clamp(point.x, edgePadding, width - edgePadding),
+    y: clamp(point.y, edgePadding, height - edgePadding)
+  }));
+
+  const strokePaths = (strokeStyle, lineWidth) => {
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    paths.forEach(indices => {
+      ctx.beginPath();
+      ctx.moveTo(overlayPoints[indices[0]].x, overlayPoints[indices[0]].y);
+      ctx.lineTo(overlayPoints[indices[1]].x, overlayPoints[indices[1]].y);
+      ctx.lineTo(overlayPoints[indices[2]].x, overlayPoints[indices[2]].y);
+      ctx.stroke();
+    });
+  };
+
+  ctx.save();
+  strokePaths("rgba(255,255,255,.85)", 2.6);
+  strokePaths("rgba(26,26,26,.6)", 1);
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `600 ${Math.max(7.5, 8.2 * scale)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+
+  overlayPoints.forEach((point, index) => {
+    const x = point.x;
+    const y = point.y;
+    ctx.beginPath();
+    ctx.arc(x, y, markerRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(26,26,26,.9)";
+    ctx.fill();
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(String(index + 1), x, y + .2);
+  });
+
+  ctx.restore();
+}
+
+function updateMixedTexture(amount) {
+  const mixAmount = clamp01(amount);
+  const mixedContext = mixedTexture.getContext("2d");
+  mixedContext.setTransform(1, 0, 0, 1, 0, 0);
+  mixedContext.clearRect(0, 0, mixedTexture.width, mixedTexture.height);
+  mixedContext.globalAlpha = 1;
+  mixedContext.drawImage(iconTexture, 0, 0);
+  mixedContext.globalAlpha = mixAmount;
+  mixedContext.drawImage(appTexture, 0, 0);
+  mixedContext.globalAlpha = 1;
+}
+
+function renderHome() {
+  const homeScale = visualSprings.homeScale.value;
+  const homeDim = visualSprings.homeDim.value;
+  const homeOpacity = visualSprings.homeOpacity.value;
+  const dockOpacity = visualSprings.dockOpacity.value;
+
+  home.style.transform = `scale(${homeScale})`;
+  home.style.filter = `brightness(${homeDim}) saturate(${mix(1, .88, clamp01((1 - homeDim) / .21))})`;
+  home.style.opacity = clamp01(homeOpacity).toFixed(3);
+  icons.forEach(iconElement => {
+    const isActive = iconElement === activeIcon;
+    iconElement.style.opacity = isActive && phase !== "idle" ? "0" : "1";
+    iconElement.style.transform = isActive && phase !== "idle" ? "scale(.91)" : "scale(1)";
+  });
+  dock.style.opacity = clamp01(dockOpacity).toFixed(3);
+  dock.style.transform = `scale(${mix(.94, 1, clamp01(dockOpacity))})`;
+  grid.style.opacity = clamp01(dockOpacity).toFixed(3);
+  grid.style.transform = `scale(${mix(.97, 1, clamp01(dockOpacity))})`;
+
+  homeIndicator.style.opacity = clamp01(visualSprings.indicatorOpacity.value).toFixed(3);
+  homeIndicator.style.pointerEvents = phase === "open" ? "auto" : "none";
+}
+
+function render() {
+  ctx.setTransform(dpr * renderScaleX, 0, 0, dpr * renderScaleY, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  if (!mesh.length || phase === "idle") {
+    renderHome();
+    return;
+  }
+
+  const progress = clamp01(boundsSpring.value);
+  renderHome();
+
+  const outline = meshOutlinePath(Math.max(0, cornerSpring.value));
+  const appAlpha = clamp01(visualSprings.contentMix.value);
+  updateMixedTexture(appAlpha);
+
+  ctx.save();
+  ctx.fillStyle = APPS[activeAppIndex].accent;
+  ctx.fill(outline);
+  ctx.restore();
+
+  ctx.save();
+  ctx.clip(outline);
+  drawMeshTexture(mixedTexture, 1);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = mix(.34, .08, progress);
+  ctx.strokeStyle = "rgba(26,26,26,.6)";
+  ctx.lineWidth = Math.max(.7, mix(1.4, .65, progress));
+  ctx.stroke(outline);
+  ctx.restore();
+
+  drawMeshOverlay();
+}
+
+function isSettled() {
+  // thresholds sized for the overdamped spring's long sub-pixel tail: end once
+  // motion is visually done (< ~0.3pt), not when the analytic tail reaches zero.
+  if (
+    Math.abs(boundsSpring.value - boundsSpring.target) > .004 ||
+    Math.abs(boundsSpring.velocity) > .03
+  ) {
+    return false;
+  }
+
+  return mesh.every(point =>
+    Math.abs(point.x - point.targetX) < .3 &&
+    Math.abs(point.y - point.targetY) < .3 &&
+    Math.abs(point.vx) < 1.0 &&
+    Math.abs(point.vy) < 1.0
+  );
+}
+
+function animationLoop(now) {
+  if (phase !== "opening" && phase !== "closing") return;
+
+  const realDelta = lastFrame ? (now - lastFrame) / 1000 : 0;
+  lastFrame = now;
+  const dt = clamp(realDelta * timeScale, 0, .033);
+
+  stepPhysics(dt);
+  render();
+  readout.textContent =
+    phase === "closing"
+      ? `退出 ${APPS[activeAppIndex].name} · ${simElapsed.toFixed(3)}s · 收回图标`
+      : `打开 ${APPS[activeAppIndex].name} · ${simElapsed.toFixed(3)}s · 9 个控制点独立收敛`;
+
+  if (isSettled()) {
+    const completedPhase = phase;
+    boundsSpring.value = boundsSpring.target;
+    boundsSpring.velocity = 0;
+    mesh.forEach(point => {
+      point.x = point.targetX;
+      point.y = point.targetY;
+      point.vx = 0;
+      point.vy = 0;
+    });
+    snapVisualSprings();
+    cornerSpring.value =
+      completedPhase === "closing"
+        ? sourceFrame.radius
+        : IOS27_PHONE_PROFILE.displayCornerRadius;
+    cornerSpring.velocity = 0;
+
+    if (completedPhase === "closing") {
+      phase = "idle";
+      hint.textContent = "点击任意 App 打开";
+      hint.style.opacity = "1";
+      readout.textContent = "已返回主屏幕";
+    } else {
+      phase = "open";
+      readout.textContent = `${APPS[activeAppIndex].name} 已打开 · 点击底部白色横条退出`;
+    }
+
+    render();
+    raf = 0;
+    return;
+  }
+
+  raf = requestAnimationFrame(animationLoop);
+}
+
+function startOpen(options = {}) {
+  if (phase !== "idle") return;
+
+  clearTimeout(replayTimer);
+  if (Number.isInteger(options.appIndex) && icons[options.appIndex]) {
+    activeAppIndex = options.appIndex;
+    activeIcon = icons[options.appIndex];
+  }
+  createTextures();
+  initializeMesh();
+  phase = "opening";
+  simElapsed = 0;
+  activeBoundsResponse = openResponse;
+  boundsSpring.target = 1;
+  hint.style.opacity = "0";
+  lastFrame = performance.now();
+  render();
+
+  if (!options.manual) {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(animationLoop);
+  }
+}
+
+function startClose() {
+  if (phase !== "open") return;
+
+  clearTimeout(replayTimer);
+  phase = "closing";
+  simElapsed = 0;
+  activeBoundsResponse = closeResponse;
+  boundsSpring.target = 0;
+  configureClosingVisualSprings();
+
+  mesh.forEach((point, index) => {
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    const u = GRID_COORDS[column];
+    const v = GRID_COORDS[row];
+    point.targetX = sourceFrame.x + sourceFrame.width * u;
+    point.targetY = sourceFrame.y + sourceFrame.height * v;
+    point.responseX = responseForVertex(column, row, closeResponse, true);
+    point.responseY = responseForVertex(column, row, closeResponse, true);
+  });
+
+  hint.style.opacity = "0";
+  lastFrame = performance.now();
+  render();
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(animationLoop);
+}
+
+function resetScene() {
+  cancelAnimationFrame(raf);
+  clearTimeout(replayTimer);
+  raf = 0;
+  phase = "idle";
+  simElapsed = 0;
+  lastFrame = 0;
+  activeBoundsResponse = openResponse;
+  initializeMesh();
+  hint.textContent = "点击任意 App 打开";
+  hint.style.opacity = "1";
+  readout.textContent = "等待打开";
+  render();
+}
+
+function replay() {
+  resetScene();
+  hint.textContent = "准备打开…";
+  replayTimer = window.setTimeout(() => {
+    hint.style.opacity = "0";
+    startOpen();
+  }, 360);
+}
+
+icons.forEach((iconElement, appIndex) => {
+  iconElement.addEventListener("click", () => startOpen({ appIndex }));
+  iconElement.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      startOpen({ appIndex });
+    }
+  });
+});
+
+homeIndicator.addEventListener("click", startClose);
+replayButton.addEventListener("click", replay);
+
+const bindSlider = (inputId, valueId, apply) => {
+  const input = document.getElementById(inputId);
+  const display = document.getElementById(valueId);
+  const sync = () => {
+    const parsed = Number(input.value);
+    display.textContent = parsed.toFixed(2);
+    apply(parsed);
+  };
+  input.addEventListener("input", sync);
+  sync();
+};
+
+bindSlider("sOpen", "vOpen", value => { openResponse = value; });
+bindSlider("sClose", "vClose", value => { closeResponse = value; });
+bindSlider("sZeta", "vZeta", value => { springZeta = value; });
+bindSlider("sSpeed", "vSpeed", value => { timeScale = value; });
+
+window.addEventListener("resize", resizeCanvas);
+
+window.__iosMeshDemo = {
+  open: startOpen,
+  close: startClose,
+  reset: resetScene,
+  replay,
+  profile: IOS27_PHONE_PROFILE,
+  get phase() {
+    return phase;
+  },
+  get sourceFrame() {
+    return { ...sourceFrame };
+  },
+  get responseMatrix() {
+    return {
+      open: Array.from({ length: 3 }, (_, row) =>
+        Array.from({ length: 3 }, (_, column) =>
+          responseForVertex(column, row, openResponse, false)
+        )
+      ),
+      close: Array.from({ length: 3 }, (_, row) =>
+        Array.from({ length: 3 }, (_, column) =>
+          responseForVertex(column, row, closeResponse, true)
+        )
+      )
+    };
+  },
+  get points() {
+    return mesh.map(point => ({ x: point.x, y: point.y }));
+  }
+};
+
+const query = new URLSearchParams(location.search);
+if (query.has("app")) {
+  const requestedApp = clamp(Math.floor(Number(query.get("app")) || 0), 0, APPS.length - 1);
+  activeAppIndex = requestedApp;
+  activeIcon = icons[requestedApp];
+}
+
+resizeCanvas();
+
+if (query.get("slow") === "1") {
+  const speedSlider = document.getElementById("sSpeed");
+  speedSlider.value = "0.25";
+  speedSlider.dispatchEvent(new Event("input"));
+}
+
+if (query.has("t")) {
+  requestAnimationFrame(() => {
+    startOpen({ manual: true });
+    const targetTime = clamp(Number(query.get("t")) || 0, 0, 2);
+    while (simElapsed < targetTime) {
+      stepPhysics(Math.min(1 / 240, targetTime - simElapsed));
+    }
+    phase = "frozen";
+    render();
+    readout.textContent =
+      `${APPS[activeAppIndex].name} 冻结帧 · t=${targetTime.toFixed(3)}s · 9 个控制点`;
+  });
+} else if (query.get("autoplay") === "1") {
+  replayTimer = window.setTimeout(startOpen, 620);
+}
+</script>
+</body>
+</html>

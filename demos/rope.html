@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Rope · Verlet</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e6e6e6; --bg:#ffffff; --stage:#f7f6f4;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+    --r-card:28px; --r-box:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;
+  }
+  .doc{width:100%;max-width:600px}
+  h1{font-size:27px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-dim);line-height:1.7;margin-bottom:26px}
+  .sub b{color:var(--ink-soft);font-weight:600}
+
+  .stage-card{background:var(--stage);border-radius:var(--r-card);padding:18px 18px 16px}
+  .cap{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.04em;padding:4px 8px 16px}
+  #stageArea{position:relative;height:clamp(380px,55vh,520px)}
+  #ropeCanvas{display:block;width:100%;height:100%;border-radius:var(--r-box);touch-action:none;cursor:grab}
+  #ropeCanvas.drag{cursor:grabbing}
+
+  .controls{display:flex;align-items:center;gap:10px;margin-top:14px;padding:0 4px}
+  .ad-label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);flex:1;line-height:1.6}
+  .ad-label b{color:var(--ink);font-weight:600}
+  .ad-replay{margin-left:auto;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+       color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);border-radius:50%;cursor:pointer;
+       transition:.15s;flex:0 0 auto}
+  .ad-replay:hover{background:#ececee;color:var(--ink)}
+  .ad-replay:active{transform:rotate(-40deg)}
+  .ad-replay svg{width:16px;height:16px;display:block}
+</style>
+</head>
+<body>
+<article class="doc">
+  <h1>Rope</h1>
+  <p class="sub">Verlet 绳子:拖动两端手柄。固定 <b>4ms</b> 步长积分,高刷屏与 60Hz 手感一致;静止后渲染循环<b>自动休眠</b>,交互即唤醒。</p>
+
+  <div class="stage-card">
+    <span class="cap">VERLET ROPE · 4MS FIXED STEPS · SLEEP ON SETTLE</span>
+    <div id="stageArea"><canvas id="ropeCanvas"></canvas></div>
+    <div class="controls">
+      <span class="ad-label" id="status"></span>
+      <button class="ad-replay" id="reset" title="重置绳子" aria-label="Reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+</article>
+
+<script>
+'use strict'
+// =============================================================================
+// Verlet rope — 与 playground 其它 demo 同一套渲染架构:
+//   • scheduleRender(): render-on-demand,静止后停 rAF,交互/resize 唤醒
+//   • 固定 4ms 模拟步长,与帧率解耦(120Hz 与 60Hz 行为一致)
+//   • resize 只重设画布与边界,不重置绳子状态
+// =============================================================================
+
+// === scheduler ===============================================================
+let scheduledRender = false
+function scheduleRender() {
+  if (scheduledRender) return
+  scheduledRender = true
+  requestAnimationFrame(function renderAndMaybeScheduleAnotherRender(now) {
+    scheduledRender = false
+    if (render(now)) scheduleRender()
+  })
+}
+
+// === config ==================================================================
+// 由旧的每帧参数(60fps:g=0.55/frame²,damping=0.995,18 次迭代)换算到 4ms 步长
+const msPerStep = 4
+const gravity = 0.032        // px/step²
+const damping = 0.9988       // per step
+const iterations = 5         // 约束迭代 / step(60Hz 下等效每帧 ~21 次)
+const segmentCount = 28
+const handleRadius = 14
+const hitSlop = 10           // 命中判定比视觉半径宽一圈,照顾触屏
+const ropeMargin = 5         // 绳身节点的边界余量(≈线宽一半)
+const QUIET_FRAMES_TO_SLEEP = 12
+const SLEEP_EPSILON = 0.02   // px/step,低于视为静止
+
+// === DOM =====================================================================
+const canvas = document.getElementById('ropeCanvas')
+const ctx = canvas.getContext('2d', { alpha: false })
+const statusEl = document.getElementById('status')
+const STAGE_BG = '#f7f6f4'
+
+// === state ===================================================================
+const points = []
+const sticks = []
+let dragging = null          // {p, pointerId}
+let animatedUntilTime = null
+let quietFrames = 0
+
+function makePoint(x, y, pinned, variant) {
+  return { x, y, oldX: x, oldY: y, pinned, pinX: x, pinY: y, variant }
+}
+function pinPoint(p, x, y) {
+  p.pinX = x; p.pinY = y
+  p.x = x; p.y = y
+  p.oldX = x; p.oldY = y
+}
+
+// === canvas / rope setup =====================================================
+function resizeCanvas() {
+  const dpr = Math.max(1, window.devicePixelRatio || 1)
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  canvas.width = Math.floor(w * dpr)
+  canvas.height = Math.floor(h * dpr)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // 保留绳子状态,仅把越界的点收回新边界
+  for (const p of points) {
+    if (p.pinned) pinPoint(p, clamp(p.pinX, handleRadius, w - handleRadius), clamp(p.pinY, handleRadius, h - handleRadius))
+    else constrainToBounds(p, ropeMargin)
+  }
+}
+
+function initRope() {
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  const ropeLength = Math.min(w * 0.65, 700)
+  const spacing = ropeLength / segmentCount
+  const startX = w / 2 - ropeLength / 2
+  const anchorY = h * 0.3
+
+  points.length = 0
+  sticks.length = 0
+  for (let i = 0; i <= segmentCount; i++) {
+    const x = startX + spacing * i
+    const y = anchorY + Math.sin((i / segmentCount) * Math.PI) * 12
+    const isEndpoint = i === 0 || i === segmentCount
+    const variant = i === 0 ? 'solid' : i === segmentCount ? 'ring' : null
+    const p = makePoint(x, y, isEndpoint, variant)
+    if (isEndpoint) pinPoint(p, x, y)
+    points.push(p)
+    if (i > 0) sticks.push({ p0: points[i - 1], p1: p, length: spacing })
+  }
+}
+
+// === physics (per 4ms step) ==================================================
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(v, hi)) }
+
+function constrainToBounds(p, margin) {
+  const maxX = canvas.clientWidth - margin
+  const maxY = canvas.clientHeight - margin
+  if (p.x < margin) { p.x = margin; p.oldX = margin }
+  else if (p.x > maxX) { p.x = maxX; p.oldX = maxX }
+  if (p.y < margin) { p.y = margin; p.oldY = margin }
+  else if (p.y > maxY) { p.y = maxY; p.oldY = maxY }
+}
+
+function physicsStep() {
+  for (const p of points) {
+    if (p.pinned) { pinPoint(p, p.pinX, p.pinY); continue }
+    const vx = (p.x - p.oldX) * damping
+    const vy = (p.y - p.oldY) * damping
+    p.oldX = p.x
+    p.oldY = p.y
+    p.x += vx
+    p.y += vy + gravity
+    constrainToBounds(p, ropeMargin)
+  }
+  for (let it = 0; it < iterations; it++) {
+    for (const s of sticks) {
+      const dx = s.p1.x - s.p0.x
+      const dy = s.p1.y - s.p0.y
+      const dist = Math.hypot(dx, dy) || 1e-4
+      const factor0 = s.p0.pinned ? 0 : 1
+      const factor1 = s.p1.pinned ? 0 : 1
+      const invSum = factor0 + factor1
+      if (!invSum) continue
+      const f = (s.length - dist) / (dist * invSum)
+      const ox = dx * f, oy = dy * f
+      if (factor0) { s.p0.x -= ox; s.p0.y -= oy; constrainToBounds(s.p0, ropeMargin) }
+      if (factor1) { s.p1.x += ox; s.p1.y += oy; constrainToBounds(s.p1, ropeMargin) }
+    }
+  }
+}
+
+// === draw ====================================================================
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  ctx.fillStyle = STAGE_BG
+  ctx.fillRect(0, 0, w, h)
+
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  const a = points[0], b = points[points.length - 1]
+
+  // 绳身:冷调靛蓝渐变(与 sound-wave / horizon-orb 同族)+ 细高光,圆管质感,无投影
+  const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y)
+  g.addColorStop(0, '#6E63E8')
+  g.addColorStop(1, '#9B93FF')
+  traceRope()
+  ctx.lineWidth = 8
+  ctx.strokeStyle = g
+  ctx.stroke()
+  traceRope()
+  ctx.lineWidth = 3
+  ctx.strokeStyle = 'rgba(255,255,255,0.30)'
+  ctx.stroke()
+
+  drawHandle(a)
+  drawHandle(b)
+}
+
+function traceRope() {
+  ctx.beginPath()
+  ctx.moveTo(points[0].x, points[0].y)
+  for (let i = 1; i < points.length - 1; i++) {
+    const midX = (points[i].x + points[i + 1].x) / 2
+    const midY = (points[i].y + points[i + 1].y) / 2
+    ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY)
+  }
+  ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y)
+}
+
+// 两枚手柄:墨色实心 / 白底墨环,呼应文档风的黑白按钮
+function drawHandle(p) {
+  ctx.beginPath()
+  ctx.arc(p.x, p.y, handleRadius, 0, Math.PI * 2)
+  if (p.variant === 'solid') {
+    ctx.fillStyle = '#1a1a1a'
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+  } else {
+    ctx.fillStyle = '#ffffff'
+    ctx.fill()
+    ctx.lineWidth = 2.5
+    ctx.strokeStyle = '#1a1a1a'
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, handleRadius - 1.25, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.fillStyle = '#1a1a1a'
+  }
+  ctx.beginPath()
+  ctx.arc(p.x, p.y, 4, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+let statusCache = null
+function setStatus(html) {
+  if (html === statusCache) return
+  statusCache = html
+  statusEl.innerHTML = html
+}
+
+// === render ==================================================================
+function render(now) {
+  let until = animatedUntilTime ?? now
+  let steps = Math.floor((now - until) / msPerStep)
+  if (steps > 64) { steps = 64; until = now - 64 * msPerStep } // 后台切回时不补几分钟的账
+  until += steps * msPerStep
+
+  for (let i = 0; i < steps; i++) physicsStep()
+
+  if (steps > 0) {
+    let maxV = 0
+    for (const p of points) maxV = Math.max(maxV, Math.abs(p.x - p.oldX), Math.abs(p.y - p.oldY))
+    quietFrames = maxV < SLEEP_EPSILON ? quietFrames + 1 : 0
+  }
+
+  draw()
+
+  const still = dragging != null || quietFrames < QUIET_FRAMES_TO_SLEEP
+  setStatus(still ? '拖动两端手柄 · sim <b>running</b>' : '拖动两端手柄 · sim idle')
+  animatedUntilTime = still ? until : null
+  return still
+}
+
+// === events ==================================================================
+function pointerPos(e) {
+  const r = canvas.getBoundingClientRect()
+  return { x: e.clientX - r.left, y: e.clientY - r.top }
+}
+function wake() { quietFrames = 0; scheduleRender() }
+
+canvas.addEventListener('pointerdown', e => {
+  const pos = pointerPos(e)
+  for (const p of [points[0], points[points.length - 1]]) {
+    if (Math.hypot(p.x - pos.x, p.y - pos.y) <= handleRadius + hitSlop) {
+      dragging = { p, pointerId: e.pointerId }
+      pinPoint(p, pos.x, pos.y)
+      canvas.setPointerCapture(e.pointerId)
+      canvas.classList.add('drag')
+      e.preventDefault()
+      wake()
+      break
+    }
+  }
+}, { passive: false })
+
+canvas.addEventListener('pointermove', e => {
+  if (!dragging || e.pointerId !== dragging.pointerId) return
+  const pos = pointerPos(e)
+  pinPoint(dragging.p,
+    clamp(pos.x, handleRadius, canvas.clientWidth - handleRadius),
+    clamp(pos.y, handleRadius, canvas.clientHeight - handleRadius))
+  e.preventDefault()
+  wake()
+}, { passive: false })
+
+function endDrag(e) {
+  if (!dragging || e.pointerId !== dragging.pointerId) return
+  dragging = null
+  canvas.classList.remove('drag')
+  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
+  wake()
+}
+canvas.addEventListener('pointerup', endDrag)
+canvas.addEventListener('pointercancel', endDrag)
+
+window.addEventListener('resize', () => { resizeCanvas(); wake() })
+
+document.getElementById('reset').addEventListener('click', () => { initRope(); wake() })
+
+// === boot ====================================================================
+resizeCanvas()
+initRope()
+scheduleRender()
+</script>
+</body>
+</html>

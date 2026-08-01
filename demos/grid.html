@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Grid Reorder · Size-Aware Drag</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e6e6e6; --bg:#ffffff; --stage:#f7f6f4; --panel:#f7f7f8;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+    --r-card:28px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;
+  }
+  .doc{width:100%;max-width:600px}
+  h1{font-size:27px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-dim);line-height:1.7;margin-bottom:26px}
+  .sub b{color:var(--ink-soft);font-weight:600}
+
+  .stage-card{background:var(--stage);border-radius:var(--r-card);padding:18px 18px 16px;overflow:visible}
+  .cap{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.04em;padding:4px 8px 16px}
+  #stageArea{position:relative;touch-action:none;-webkit-user-select:none;user-select:none}
+
+  /* 网格底座格子 */
+  .cell{
+    position:absolute;border-radius:12px;background:rgba(26,26,26,.05);
+    display:flex;align-items:center;justify-content:center;
+    font:500 10px var(--mono);color:rgba(26,26,26,.18);pointer-events:none;
+  }
+  .cell.ok{box-shadow:inset 0 0 0 2px #34C759;background:rgba(52,199,89,.10)}
+  .cell.bad{box-shadow:inset 0 0 0 2px #FF3B30;background:rgba(255,59,48,.08)}
+
+  /* 可拖拽的块 — flat Apple color,同 index.html 的 icon 风格 */
+  .block{
+    position:absolute;display:flex;align-items:center;justify-content:center;
+    border-radius:12px;color:#fff;font:600 13px var(--sans);letter-spacing:.01em;
+    will-change:transform;cursor:grab;
+  }
+  .block.lg{font-size:15px}
+  .block.drag{cursor:grabbing}
+  .block.invalid{box-shadow:inset 0 0 0 3px rgba(255,59,48,.9)}
+
+  /* control row — 同 index.html 的 .controls / .ad-label / .ad-replay */
+  .controls{display:flex;align-items:center;gap:10px;margin-top:14px;padding:0 4px}
+  .ad-label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);flex:1;line-height:1.6}
+  .ad-label b{color:var(--ink);font-weight:600}
+  .ad-replay{margin-left:auto;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+       color:var(--ink-soft);background:var(--bg);border:1px solid var(--line);border-radius:50%;cursor:pointer;
+       transition:.15s;flex:0 0 auto}
+  .ad-replay:hover{background:#ececee;color:var(--ink)}
+  .ad-replay:active{transform:rotate(-40deg)}
+  .ad-replay svg{width:16px;height:16px;display:block}
+
+</style>
+</head>
+<body>
+<article class="doc">
+  <h1>Grid Reorder</h1>
+  <p class="sub">尺寸感知的网格拖拽:<b>2×2 / 2×1 / 1×2 / 1×1</b> 混排。预览高亮与实际落位共用同一份「移动计划」— 绿框亮起的样子,就是松手后的样子。被挡住的块会自动<b>互换、让位或腾挪</b>到就近腾出的格子。</p>
+
+  <div class="stage-card">
+    <span class="cap">SIZE-AWARE DRAG · 4×8 · UNIFIED MOVE PLAN</span>
+    <div id="stageArea"></div>
+    <div class="controls">
+      <span class="ad-label" id="status"></span>
+      <button class="ad-replay" id="reset" title="恢复默认布局" aria-label="Reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+</article>
+
+<script>
+'use strict'
+// =============================================================================
+// Grid Reorder — size-aware draggable grid.
+//
+// Render architecture follows chenglou's draggable-cards pattern:
+//   • scheduleRender(): render-on-demand, keeps going only while animating
+//   • fixed 4ms spring steps, decoupled from framerate
+//   • render() = event ingest → move plan → spring steps → batched DOM writes
+//
+// Placement logic = ONE rule engine (planMove):
+//   预览高亮与落位执行同一份计划,天然一致 —— 不再有两套各自为政的判定。
+//   计划规则:
+//   • 1×1 只能落空格或与另一枚 1×1 互换(不挤大块)
+//   • 目标区域恰好被一个同尺寸块覆盖 → 整块互换
+//   • 其余情况:把所有阻挡块(单层、不级联)安置到「空格 ∪ 拖拽块腾出的格」
+//     里距其当前位置最近的可放锚点;都放得下才算有效
+// =============================================================================
+
+// === generic scheduler ======================================================
+let scheduledRender = false
+function scheduleRender() {
+  if (scheduledRender) return
+  scheduledRender = true
+  requestAnimationFrame(function renderAndMaybeScheduleAnotherRender(now) {
+    scheduledRender = false
+    if (render(now)) scheduleRender()
+  })
+}
+
+// === generic spring physics (4ms/step, mass = 1) =============================
+const msPerAnimationStep = 4
+function spring(pos, k = 290, b = 24) { return { pos, dest: pos, v: 0, k, b } }
+function springStep(s) {
+  const t = msPerAnimationStep / 1000
+  const a = -s.k * (s.pos - s.dest) - s.b * s.v
+  s.v += a * t
+  s.pos += s.v * t
+}
+function springGoToEnd(s) { s.pos = s.dest; s.v = 0 }
+
+// === config ==================================================================
+const gridSize = 64, gridGap = 8, cols = 4, rows = 8
+
+// === DOM =====================================================================
+const stage = document.getElementById('stageArea')
+const statusEl = document.getElementById('status')
+const DEFAULT_STATUS = '拖动任意方块 · 互换 / 挤开 / 让位 · 绿框 = 计划可行'
+
+// === state ===================================================================
+let animatedUntilTime = null
+let dragged = null          // {id, dx, dy}
+let lastDragged = null
+let pointerState = 'up'
+let pointer = []            // 最近的指针采样(stage 局部坐标)
+const events = { down: null, move: null, up: false }
+const data = []             // {id, position, w, h, x, y, scale, node}
+const cells = []            // 底座格子 DOM
+const defaultPositions = {}
+
+// Apple system colors — 与 index.html 的 icon 同一族
+const APPLE = [
+  '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#00C7BE', '#30B0C7',
+  '#32ADE6', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E',
+]
+const specificColors = {
+  big: '#007AFF', big2: '#5856D6',
+  wideTop: '#34C759', wideBottom: '#00C7BE',
+  tall: '#FF9500', tall2: '#FF2D55',
+}
+function colorForId(id) {
+  if (specificColors[id]) return specificColors[id]
+  const n = Number(id)
+  return APPLE[(Number.isNaN(n) ? 0 : n) % APPLE.length]
+}
+
+// === grid helpers ============================================================
+function idxToRC(idx) { return { r: (idx / cols) | 0, c: idx % cols } }
+function rcToIdx(r, c) { return r * cols + c }
+function areaCells(anchor, w, h) {
+  const { r, c } = idxToRC(anchor)
+  const out = []
+  for (let dr = 0; dr < h; dr++) for (let dc = 0; dc < w; dc++) out.push(rcToIdx(r + dr, c + dc))
+  return out
+}
+function clampAnchorFor(anchor, w, h) {
+  let { r, c } = idxToRC(anchor)
+  return rcToIdx(Math.min(r, rows - h), Math.min(c, cols - w))
+}
+function getGridPositions() {
+  const totalW = cols * gridSize + (cols - 1) * gridGap
+  const startX = (stage.clientWidth - totalW) / 2
+  const out = []
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    out.push({ x: startX + c * (gridSize + gridGap), y: r * (gridSize + gridGap) })
+  return out
+}
+function buildOccupancy() {
+  const occ = new Array(rows * cols).fill(null)
+  for (const d of data) for (const ci of areaCells(d.position, d.w, d.h)) occ[ci] = d.id
+  return occ
+}
+function detectOverlap() {
+  const seen = new Set()
+  for (const d of data) for (const ci of areaCells(d.position, d.w, d.h)) {
+    if (seen.has(ci)) return true
+    seen.add(ci)
+  }
+  return false
+}
+function byId(id) { return data.find(d => d.id === id) }
+function itemPixelSize(d) {
+  return { w: d.w * gridSize + (d.w - 1) * gridGap, h: d.h * gridSize + (d.h - 1) * gridGap }
+}
+
+// === 统一规则引擎:一份计划,预览与落位共用 ==================================
+// 返回 { valid, reason?, moves: [{id, to}] } — moves 是被挤开块的新锚点,不含 d 自己
+function planMove(d, targetPos) {
+  const target = clampAnchorFor(targetPos, d.w, d.h)
+  if (target === d.position) return { valid: true, target, moves: [] }
+
+  const occ = buildOccupancy()
+  const cellsTarget = areaCells(target, d.w, d.h)
+  const blockerIds = [...new Set(cellsTarget.map(ci => occ[ci]).filter(id => id && id !== d.id))]
+  const blockers = blockerIds.map(byId)
+
+  if (blockers.length === 0) return { valid: true, target, moves: [] }
+
+  // 1×1 保守规则:只与 1×1 互换,不挤大块
+  if (d.w === 1 && d.h === 1) {
+    const o = blockers[0]
+    if (o.w === 1 && o.h === 1) return { valid: true, target, moves: [{ id: o.id, to: d.position }] }
+    return { valid: false, target, reason: '1×1 不能挤开大块' }
+  }
+
+  // 同尺寸整块互换(目标区域被一个同尺寸块完整覆盖)
+  if (blockers.length === 1) {
+    const o = blockers[0]
+    if (o.w === d.w && o.h === d.h && o.position === target)
+      return { valid: true, target, moves: [{ id: o.id, to: d.position }] }
+  }
+
+  // 通用腾挪:阻挡块(单层、不级联)安置到「空格 ∪ d 腾出的格」中最近的可放位置
+  // free = 全部格子 − 目标区域 − 不动块的占用(阻挡块与 d 自己的格子视为将被腾出)
+  const free = new Set()
+  const forbidden = new Set(cellsTarget)
+  for (let i = 0; i < rows * cols; i++) if (!forbidden.has(i)) free.add(i)
+  for (const it of data) {
+    if (it.id === d.id || blockerIds.includes(it.id)) continue
+    for (const ci of areaCells(it.position, it.w, it.h)) free.delete(ci)
+  }
+
+  const moves = []
+  for (const o of blockers.slice().sort((a, b) => b.w * b.h - a.w * a.h)) {
+    const spot = nearestFit(o, free)
+    if (spot == null) return { valid: false, target, reason: '空间不足,放不下被挡的块' }
+    for (const ci of areaCells(spot, o.w, o.h)) free.delete(ci)
+    moves.push({ id: o.id, to: spot })
+  }
+  return { valid: true, target, moves }
+}
+
+// 距 o 当前锚点最近、且整块能放进 freeSet 的锚点;dr 权重略高 → 优先同行挪动
+function nearestFit(o, freeSet) {
+  const cur = idxToRC(o.position)
+  let best = null, bestScore = Infinity
+  for (let r = 0; r <= rows - o.h; r++) for (let c = 0; c <= cols - o.w; c++) {
+    let ok = true
+    for (const ci of areaCells(rcToIdx(r, c), o.w, o.h)) if (!freeSet.has(ci)) { ok = false; break }
+    if (!ok) continue
+    const dr = r - cur.r, dc = c - cur.c
+    const score = dr * dr * 1.5 + dc * dc
+    if (score < bestScore) { bestScore = score; best = rcToIdx(r, c) }
+  }
+  return best
+}
+
+// === build DOM ===============================================================
+{
+  const totalH = rows * gridSize + (rows - 1) * gridGap
+  stage.style.height = totalH + 'px'
+  for (let i = 0; i < rows * cols; i++) {
+    const node = document.createElement('div')
+    node.className = 'cell'
+    node.style.width = node.style.height = gridSize + 'px'
+    node.textContent = String(i + 1)
+    stage.appendChild(node)
+    cells.push(node)
+  }
+}
+
+function createItem(id, position, w, h, label) {
+  const positions = getGridPositions()
+  const node = document.createElement('div')
+  node.className = 'block' + (w * h === 4 ? ' lg' : '')
+  node.textContent = label
+  node.style.backgroundColor = colorForId(id)
+  const size = { w: w * gridSize + (w - 1) * gridGap, h: h * gridSize + (h - 1) * gridGap }
+  node.style.width = size.w + 'px'
+  node.style.height = size.h + 'px'
+  stage.appendChild(node)
+  data.push({
+    id, position, w, h, node,
+    x: spring(positions[position].x),
+    y: spring(positions[position].y),
+    scale: spring(1),
+  })
+  defaultPositions[id] = position
+}
+
+// 默认布局:上四行放大块,下四行填满 1×1
+createItem('big', 0, 2, 2, 'A')
+createItem('big2', 2, 2, 2, 'B')
+createItem('wideTop', 8, 2, 1, 'W1')
+createItem('wideBottom', 12, 2, 1, 'W2')
+createItem('tall', 10, 1, 2, 'T1')
+createItem('tall2', 11, 1, 2, 'T2')
+for (let i = 16, n = 1; i < 32; i++, n++) createItem(String(n - 1), i, 1, 1, String(n))
+
+// === events ==================================================================
+function localPoint(e) {
+  const r = stage.getBoundingClientRect()
+  return { x: e.clientX - r.left, y: e.clientY - r.top, time: performance.now() }
+}
+stage.addEventListener('pointerdown', e => { events.down = localPoint(e); scheduleRender() })
+window.addEventListener('pointermove', e => { events.move = localPoint(e); scheduleRender() })
+window.addEventListener('pointerup', () => { events.up = true; scheduleRender() })
+window.addEventListener('pointercancel', () => { events.up = true; scheduleRender() })
+window.addEventListener('resize', () => scheduleRender())
+
+function hitTest(p) {
+  for (let i = data.length - 1; i >= 0; i--) {
+    const d = data[i], size = itemPixelSize(d)
+    if (d.x.pos <= p.x && p.x < d.x.pos + size.w && d.y.pos <= p.y && p.y < d.y.pos + size.h) return d
+  }
+}
+
+// 距离 (x,y) 最近的格子(按左上角比较,拖拽块以锚点吸附)
+function getTargetPosition(x, y) {
+  const positions = getGridPositions()
+  let best = 0, bestDist = Infinity
+  for (let i = 0; i < positions.length; i++) {
+    const dx = x - positions[i].x, dy = y - positions[i].y
+    const d2 = dx * dx + dy * dy
+    if (d2 < bestDist) { bestDist = d2; best = i }
+  }
+  return best
+}
+
+let statusCache = null
+function setStatus(html) {
+  if (html === statusCache) return
+  statusCache = html
+  statusEl.innerHTML = html
+}
+
+// === render ==================================================================
+function render(now) {
+  if (events.up) pointerState = 'up'
+  if (events.move) pointer.push(events.move)
+  if (events.down) { pointerState = 'firstDown'; pointer.push(events.down) }
+
+  const p = pointer.length ? pointer[pointer.length - 1] : null
+
+  let newDragged
+  if (pointerState === 'down') newDragged = dragged
+  else if (pointerState === 'up') {
+    if (dragged) {
+      // 松手:把最近 ~100ms 的指针速度交给弹簧(甩动手感)
+      const d = byId(dragged.id)
+      let i = pointer.length - 1
+      while (i > 0 && now - pointer[i].time <= 100) i--
+      const dt = i >= 0 ? now - pointer[i].time : 0
+      if (d && p && dt > 16) {
+        d.x.v += (p.x - pointer[i].x) / dt * 1000
+        d.y.v += (p.y - pointer[i].y) / dt * 1000
+      }
+      if (d) d.node.classList.remove('drag', 'invalid')
+    }
+    newDragged = null
+  } else { // firstDown
+    const hit = p && hitTest(p)
+    if (hit) newDragged = { id: hit.id, dx: p.x - hit.x.pos, dy: p.y - hit.y.pos }
+  }
+
+  // === 拖拽中:实时执行移动计划(预览 = 结果) ===============================
+  for (const cell of cells) cell.classList.remove('ok', 'bad')
+  if (newDragged) {
+    const d = byId(newDragged.id)
+    const x = p.x - newDragged.dx
+    const y = p.y - newDragged.dy
+    d.x.pos = d.x.dest = x
+    d.y.pos = d.y.dest = y
+    d.scale.dest = 1.06
+    d.node.classList.add('drag')
+
+    const plan = planMove(d, getTargetPosition(x, y))
+    for (const ci of areaCells(plan.target, d.w, d.h)) cells[ci].classList.add(plan.valid ? 'ok' : 'bad')
+
+    if (plan.valid && plan.target !== d.position) {
+      const snapshot = data.map(it => it.position)
+      for (const m of plan.moves) byId(m.id).position = m.to
+      d.position = plan.target
+      if (detectOverlap()) for (let i = 0; i < data.length; i++) data[i].position = snapshot[i]
+    }
+    d.node.classList.toggle('invalid', !plan.valid)
+    setStatus(plan.valid ? DEFAULT_STATUS : `<b>${plan.reason}</b>`)
+  } else {
+    setStatus(DEFAULT_STATUS)
+  }
+
+  // === 布局目标 ==============================================================
+  const positions = getGridPositions()
+  for (let i = 0; i < cells.length; i++)
+    cells[i].style.transform = `translate3d(${positions[i].x}px,${positions[i].y}px,0)`
+  for (const d of data) {
+    if (newDragged && d.id === newDragged.id) continue
+    d.x.dest = positions[d.position].x
+    d.y.dest = positions[d.position].y
+    d.scale.dest = 1
+  }
+
+  // === animation steps =======================================================
+  let newAnimatedUntilTime = animatedUntilTime ?? now
+  const steps = Math.floor((now - newAnimatedUntilTime) / msPerAnimationStep)
+  newAnimatedUntilTime += steps * msPerAnimationStep
+  let stillAnimating = false
+  for (const d of data) for (const s of [d.x, d.y, d.scale]) {
+    for (let i = 0; i < steps; i++) springStep(s)
+    if (Math.abs(s.v) < 0.01 && Math.abs(s.dest - s.pos) < 0.01) springGoToEnd(s)
+    else stillAnimating = true
+  }
+
+  // === paint =================================================================
+  for (let i = 0; i < data.length; i++) {
+    const d = data[i]
+    d.node.style.transform = `translate3d(${d.x.pos}px,${d.y.pos}px,0) scale(${d.scale.pos})`
+    d.node.style.zIndex =
+      newDragged && d.id === newDragged.id ? data.length + 2
+      : lastDragged && d.id === lastDragged.id ? data.length + 1
+      : i + 1
+  }
+
+  // === state update ==========================================================
+  if (pointerState === 'firstDown') pointerState = 'down'
+  if (dragged && newDragged == null) lastDragged = dragged
+  dragged = newDragged
+  animatedUntilTime = stillAnimating ? newAnimatedUntilTime : null
+  if (pointerState === 'up') pointer = []
+  if (pointer.length > 20) pointer.shift()
+  events.down = events.move = null
+  events.up = false
+
+  return stillAnimating
+}
+
+scheduleRender()
+
+// === reset ===================================================================
+document.getElementById('reset').addEventListener('click', () => {
+  for (const d of data) {
+    d.position = clampAnchorFor(defaultPositions[d.id], d.w, d.h)
+    d.scale.dest = 1.05
+  }
+  scheduleRender()
+})
+</script>
+</body>
+</html>

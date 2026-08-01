@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sound Wave · Android vs iOS</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --ink:#1a1a1a; --ink-soft:#3a3a3a; --ink-dim:#9a9a9a;
+    --line:#e6e6e6; --bg:#ffffff; --stage:#f7f6f4; --panel:#f7f7f8;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue","Microsoft YaHei",sans-serif;
+    --r-card:28px; --r-box:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;
+  }
+  .doc{width:100%;max-width:600px}
+  h1{font-size:27px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-dim);line-height:1.7;margin-bottom:26px}
+  .sub b{color:var(--ink-soft);font-weight:600}
+
+  /* shared transport */
+  .controls{display:flex;align-items:center;gap:10px;margin-bottom:22px;flex-wrap:wrap}
+  .btn{font:600 14px var(--sans);padding:9px 18px;border-radius:11px;cursor:pointer;
+       border:1px solid var(--line);background:var(--panel);color:var(--ink-soft);transition:.15s}
+  .btn:hover{background:#ececee;color:var(--ink)}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .btn.primary:hover{opacity:.85}
+  .btn:active{transform:translateY(1px)}
+  .meter{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-dim);
+       font-variant-numeric:tabular-nums}
+
+  .stack{display:flex;flex-direction:column;gap:20px}
+  .stage-card{background:var(--stage);border-radius:var(--r-card);padding:22px 20px 24px}
+  .head{padding:0 2px 16px}
+  .head h2{font-size:16px;font-weight:650;letter-spacing:-.01em;margin-bottom:5px}
+  .cap{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.02em}
+
+  /* Android bars stage */
+  #androidStage{position:relative;width:100%;height:150px}
+  #androidStage canvas{display:block;width:100%;height:100%}
+
+  /* Horizon-algorithm bars stage */
+  #hzStage{position:relative;width:100%;height:130px}
+  #hzStage canvas{display:block;width:100%;height:100%}
+
+  /* iOS Dynamic Island stage */
+  #iosStage{display:flex;align-items:center;justify-content:center;padding:16px 0 8px}
+  .island{display:flex;align-items:center;gap:16px;background:#000;border-radius:100px;
+       padding:11px 18px;box-shadow:0 10px 28px rgba(0,0,0,.20)}
+  .island .art{width:28px;height:28px;border-radius:8px;flex:none;transition:background .4s;
+       box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
+  .island canvas{display:block}
+
+  /* iOS factor chips */
+  .factors{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding:0 2px}
+  .chip{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;
+       color:var(--ink-dim);background:var(--bg);border:1px solid var(--line);border-radius:9px;
+       padding:5px 10px 5px 7px;cursor:pointer;user-select:none;transition:.15s;position:relative}
+  .chip input{position:absolute;opacity:0;pointer-events:none}
+  .chip .dot{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--ink-dim);flex:none;transition:.15s}
+  .chip.on{color:var(--ink);border-color:#cfcfcf}
+  .chip.on .dot{background:var(--ink);border-color:var(--ink)}
+  .chip:focus-within{outline:2px solid #8E86FF;outline-offset:2px}
+  .arts{display:flex;align-items:center;gap:10px;margin-top:14px;padding:0 2px}
+  .arts .lbl{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);margin-right:3px}
+  .sw{-webkit-appearance:none;appearance:none;width:26px;height:26px;border-radius:50%;
+       border:none;padding:0;cursor:pointer;flex:none;transition:transform .15s}
+  .sw:hover{transform:scale(1.08)}
+  .sw:active{transform:scale(.95)}
+  .sw:focus-visible{outline:2px solid #8E86FF;outline-offset:3px}
+  .sw.sel{box-shadow:0 0 0 3px var(--stage), 0 0 0 5px var(--ring,var(--ink))}
+
+  .note{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);line-height:1.9;margin-top:24px}
+  .note b{color:var(--ink-soft);font-weight:600}
+</style>
+</head>
+<body>
+<article class="doc">
+  <h1>Sound Wave · Android vs iOS</h1>
+  <p class="sub">同一段声音,两种声浪。上:项目 <b>声音 demo</b> 现有实现(11 段·线性·固定渐变)。下:灵动岛真实算法,逆向自 iOS 26.3 <b>MediaControls.framework</b>(6 段·<code>pow(x·0.6,0.4)</code> 压缩·封面取色)。</p>
+
+  <div class="controls">
+    <button class="btn primary" id="btnPlay">播放音乐</button>
+    <button class="btn" id="btnMic">用麦克风</button>
+    <span class="meter" id="meter">—</span>
+  </div>
+
+  <div class="stack">
+    <div class="stage-card">
+      <div class="head"><h2>Android · 现有实现</h2><span class="cap">PCMWaveView · 11 bars · linear · spring 0.8/300</span></div>
+      <div id="androidStage"><canvas id="androidWave"></canvas></div>
+    </div>
+
+    <div class="stage-card">
+      <div class="head"><h2>iOS · 灵动岛真实算法</h2><span class="cap">MRUWaveformData · 6 bars · pow-compress</span></div>
+      <div id="iosStage">
+        <div class="island"><div class="art" id="art"></div><canvas id="iosWave" width="120" height="32" style="width:120px;height:32px"></canvas></div>
+      </div>
+      <div class="factors" id="factors">
+        <label class="chip on"><input type="checkbox" data-f="comp" checked><span class="dot"></span>pow 压缩</label>
+        <label class="chip on"><input type="checkbox" data-f="tilt" checked><span class="dot"></span>频率倾斜</label>
+        <label class="chip on"><input type="checkbox" data-f="log" checked><span class="dot"></span>对数分频</label>
+        <label class="chip on"><input type="checkbox" data-f="asym" checked><span class="dot"></span>快涨慢落</label>
+        <label class="chip on"><input type="checkbox" data-f="gate" checked><span class="dot"></span>静音兜底</label>
+      </div>
+      <div class="arts" id="arts"><span class="lbl">封面取色</span></div>
+    </div>
+
+    <div class="stage-card">
+      <div class="head"><h2>Horizon Orb · 同款算法</h2><span class="cap">4-band low-freq · sqrt(1+dB/100) · easeToward 0.07/0.22</span></div>
+      <div id="hzStage"><canvas id="hzWave"></canvas></div>
+    </div>
+  </div>
+
+  <p class="note"><b>看点:</b>把 iOS 的"pow 压缩"关掉,柱子立刻塌回"只有前几根动"。最下面这条用的是 <b>horizon-orb</b> 的算法:只取低频语音段(0–3kHz)、<code>sqrt</code> 感知归一化、attack/release 不对称积分 —— 更柔、更黏,偏"语音"而非"频谱"。</p>
+</article>
+
+<script>
+(() => {
+  'use strict';
+  const FFT_SIZE = 2048;
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ============ Android params (项目 PCMWaveView / AudioFFTAnalyzer) ============
+  const A_BARS=11, A_LIN_GAIN=16, A_SPRING_K=300, A_ZETA=0.8, A_MIN_RATIO=0.16;
+  const A_COLORS=['#FFBF11','#FC4CE1','#8E5BFE'];
+
+  // ============ iOS params (逆向自 MediaControls.framework) ============
+  const I_BARS=6, I_AMP_GAIN=0.6, I_EXP=0.4, I_FREQ_EXP=-0.15;
+  const I_ANIM_DUR=0.325, I_DAMP=0.8, I_PAUSED_DUR=1.0, I_PAUSED_DAMP=1.0;
+  const I_TAU_ATTACK=0.035, I_TAU_DECAY=0.32, I_GATE_DB=-72, I_GATE_HOLD=0.35;
+  const I_INPUT_GAIN=100, I_DISPLAY_GAIN=1.15, I_LIN_GAIN=40;
+  const ARTWORKS=[
+    {name:'霓虹',colors:['#FF9F45','#FF4FA3','#8C5BFF']},
+    {name:'海雾',colors:['#39D6C8','#3E8BFF','#5A6CFF']},
+    {name:'炭火',colors:['#FFD166','#FF7A45','#E23E57']},
+  ];
+
+  // ============ Horizon Orb params (逆向自 horizon-orb.html) ============
+  const H_BARS=9, H_BIN_LO=0, H_BIN_HI=144;          // 只取低频语音段(≈0–3kHz)
+  const H_ATTACK=0.07, H_RELEASE=0.22;               // easeToward 双时间常数
+  const H_GAIN=1.1, H_MIN_RATIO=0.14;
+  const H_COL_TOP='#9B93FF', H_COL_MID='#6E63E8', H_COL_BOT='#4038B0';   // 冷调靛蓝,呼应 orb
+  const nrmDb=d=>{const c=Math.max(-100,Math.min(-10,d));return Math.sqrt(Math.max(0,1+c/100));};
+
+  const state={playing:false,mic:false,artwork:0,factors:{comp:true,tilt:true,log:true,asym:true,gate:true}};
+
+  // ---------------- audio engine ----------------
+  let ctx=null, analyser=null, freqDb=null, musicGain=null;
+  let micStream=null, micNode=null, schedTimer=null, nextNoteTime=0, step=0, bar=0;
+  function ensureCtx(){
+    if(ctx) return;
+    ctx=new (window.AudioContext||window.webkitAudioContext)();
+    analyser=ctx.createAnalyser(); analyser.fftSize=FFT_SIZE; analyser.smoothingTimeConstant=0;
+    freqDb=new Float32Array(analyser.frequencyBinCount);
+    musicGain=ctx.createGain(); musicGain.gain.value=0.9; musicGain.connect(ctx.destination); musicGain.connect(analyser);
+  }
+  const SPB=60/84, STEP_LEN=SPB/4;
+  const KICK=[0,7,10], SNARE=[4,12], HAT=[0,2,4,6,8,10,12,14];
+  const BASS={0:55.0,7:55.0,10:65.41,14:49.0};
+  const CHORDS=[[220.0,261.63,329.63,392.0],[174.61,220.0,261.63,329.63]];
+  function env(g,t,a,peak,dec){g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+a+dec);}
+  function kick(t){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(44,t+0.12);env(g,t,0.004,0.9,0.24);o.connect(g);g.connect(musicGain);o.start(t);o.stop(t+0.3);}
+  function noiseHit(t,freq,q,peak,dec){const src=ctx.createBufferSource();const len=ctx.sampleRate*0.3;const b=ctx.createBuffer(1,len,ctx.sampleRate);const d=b.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;src.buffer=b;const f=ctx.createBiquadFilter();f.type='bandpass';f.frequency.value=freq;f.Q.value=q;const g=ctx.createGain();env(g,t,0.003,peak,dec);src.connect(f);f.connect(g);g.connect(musicGain);src.start(t);src.stop(t+0.3);}
+  function bassNote(t,f0){const o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.value=f0;env(g,t,0.01,0.5,0.5);o.connect(g);g.connect(musicGain);o.start(t);o.stop(t+0.6);}
+  function chord(t,freqs){const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1100;const g=ctx.createGain();env(g,t,0.02,0.16,0.9);lp.connect(g);g.connect(musicGain);for(const f of freqs)for(const det of [-4,4]){const o=ctx.createOscillator();o.type='sawtooth';o.frequency.value=f;o.detune.value=det;o.connect(lp);o.start(t);o.stop(t+1.0);}}
+  function scheduler(){
+    while(nextNoteTime<ctx.currentTime+0.12){
+      const t=nextNoteTime,s=step;
+      if(KICK.includes(s))kick(t);
+      if(SNARE.includes(s))noiseHit(t,1800,1.2,0.25,0.18);
+      if(HAT.includes(s))noiseHit(t,9000,2.5,0.07,0.05);
+      if(BASS[s]!==undefined)bassNote(t,BASS[s]);
+      if(s===0)chord(t,CHORDS[bar%2]);
+      step=(step+1)%16; if(step===0)bar++;
+      nextNoteTime+=STEP_LEN;
+    }
+  }
+  function startMusic(){ensureCtx();ctx.resume();stopMic();step=0;bar=0;nextNoteTime=ctx.currentTime+0.06;schedTimer=setInterval(scheduler,30);state.playing=true;sync();}
+  function stopMusic(){clearInterval(schedTimer);schedTimer=null;state.playing=false;sync();}
+  async function startMic(){
+    ensureCtx();ctx.resume();stopMusic();
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){meterEl.textContent='麦克风不可用';return;}
+    try{micStream=await navigator.mediaDevices.getUserMedia({audio:true});}
+    catch(e){meterEl.textContent=e&&e.name==='NotAllowedError'?'麦克风被拒绝':'麦克风错误';return;}
+    micNode=ctx.createMediaStreamSource(micStream);micNode.connect(analyser);state.mic=true;sync();
+  }
+  function stopMic(){if(micNode){micNode.disconnect();micNode=null;}if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}state.mic=false;sync();}
+
+  // ---------------- analysis ----------------
+  const linMag=new Float32Array(FFT_SIZE/2);
+  function readSpectrum(){
+    if(!analyser){linMag.fill(0);return -Infinity;}
+    analyser.getFloatFrequencyData(freqDb);
+    let sum=0;
+    for(let i=0;i<freqDb.length;i++){const m=freqDb[i]===-Infinity?0:Math.pow(10,freqDb[i]/20);linMag[i]=m;sum+=m*m;}
+    const rms=Math.sqrt(sum/freqDb.length);
+    return rms>0?20*Math.log10(rms):-Infinity;
+  }
+  function bandLevels(nBars,mode){ // mode: 'lin200' | 'linN' | 'log'
+    const ny=ctx?ctx.sampleRate/2:24000, hz=ny/linMag.length, out=new Float32Array(nBars), edges=[];
+    if(mode==='lin200'){ for(let i=0;i<=nBars;i++) edges.push(i<nBars?i*200:ny); }
+    else if(mode==='log'){ const f0=55,f1=12500; for(let i=0;i<=nBars;i++) edges.push(f0*Math.pow(f1/f0,i/nBars)); }
+    else { for(let i=0;i<=nBars;i++) edges.push(i*(ny/nBars)); }
+    for(let b=0;b<nBars;b++){
+      let i0=Math.max(0,Math.floor(edges[b]/hz)), i1=Math.min(linMag.length-1,Math.ceil(edges[b+1]/hz));
+      if(i1<=i0)i1=i0+1;
+      let s=0; for(let i=i0;i<i1;i++)s+=linMag[i];
+      out[b]=s/(i1-i0);
+    }
+    return out;
+  }
+
+  // ---------------- Android pipeline ----------------
+  const aPos=new Float32Array(A_BARS), aVel=new Float32Array(A_BARS);
+  function stepAndroid(dt){
+    const levels=bandLevels(A_BARS,'lin200');
+    const C=2*A_ZETA*Math.sqrt(A_SPRING_K);
+    for(let i=0;i<A_BARS;i++){
+      const target=Math.min(1,levels[i]*A_LIN_GAIN);
+      aVel[i]+=(A_SPRING_K*(target-aPos[i])-C*aVel[i])*dt;
+      aPos[i]+=aVel[i]*dt;
+      if(aPos[i]<0){aPos[i]=0;aVel[i]=0;}
+    }
+  }
+
+  // ---------------- iOS pipeline (逆向自 MRUWaveformData) ----------------
+  const iDisp=new Float32Array(I_BARS); let iIdle=true, iQuiet=0;
+  function stepIOS(dt,overallDb,now){
+    const f=state.factors;
+    const levels=bandLevels(I_BARS,f.log?'log':'linN');
+    if(f.gate){ if(overallDb<I_GATE_DB)iQuiet+=dt; else iQuiet=0; iIdle=iQuiet>I_GATE_HOLD; }
+    else iIdle=false;
+    for(let i=0;i<I_BARS;i++){
+      let target;
+      if(iIdle){
+        const breath=reducedMotion?0:0.02*Math.sin(now*1.6+i*0.7);
+        target=0.12+0.16*Math.pow(Math.sin(Math.PI*i/(I_BARS-1)),1.2)+breath;
+      } else if(f.comp){
+        const mag=Math.max(0,levels[i])*I_INPUT_GAIN;
+        let v=Math.pow(mag*I_AMP_GAIN,I_EXP)*I_DISPLAY_GAIN;
+        if(f.tilt) v*=Math.max(0,1+I_FREQ_EXP*i);
+        target=Math.min(1,v);
+      } else {
+        target=Math.min(1,levels[i]*I_LIN_GAIN);
+      }
+      let tau;
+      if(iIdle) tau=I_PAUSED_DUR*I_PAUSED_DAMP*0.5;
+      else if(f.asym) tau=target>iDisp[i]?I_TAU_ATTACK:I_TAU_DECAY;
+      else tau=I_ANIM_DUR*I_DAMP*0.5;
+      iDisp[i]+=(target-iDisp[i])*(1-Math.exp(-dt/tau));
+    }
+  }
+
+  // ---------------- Horizon pipeline (逆向自 horizon-orb.html) ----------------
+  // 与 iOS 分频不同:直接在 FFT bin 上取低频段,sqrt-dB 归一化,再用 attack/release 积分
+  const hDisp=new Float32Array(H_BARS);
+  function stepHorizon(dt){
+    if(!analyser){ for(let i=0;i<H_BARS;i++) hDisp[i]+=(0-hDisp[i])*(1-Math.exp(-dt/H_RELEASE)); return; }
+    const span=(H_BIN_HI-H_BIN_LO)/H_BARS;
+    for(let i=0;i<H_BARS;i++){
+      const lo=Math.floor(H_BIN_LO+i*span), hi=Math.floor(H_BIN_LO+(i+1)*span);
+      let sum=0,n=0; for(let b=lo;b<hi&&b<freqDb.length;b++){ sum+=nrmDb(freqDb[b]); n++; }
+      const target=Math.min(1,(n?sum/n:0)*H_GAIN);
+      const tau=target>hDisp[i]?H_ATTACK:H_RELEASE;   // easeToward
+      hDisp[i]+=(target-hDisp[i])*(1-Math.exp(-dt/tau));
+    }
+  }
+
+  // ---------------- rendering ----------------
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const aCv=document.getElementById('androidWave'), iCv=document.getElementById('iosWave'), hCv=document.getElementById('hzWave');
+  const meterEl=document.getElementById('meter'), artEl=document.getElementById('art');
+  iCv.width=120*dpr; iCv.height=32*dpr;
+  function fitCv(cv){const r=cv.getBoundingClientRect();cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);}
+  function fitAll(){fitCv(aCv);fitCv(hCv);}
+  fitAll(); addEventListener('resize',fitAll);
+
+  // 柱宽与间距彼此独立(不再用同一个 widthRatio 派生);cfg.barW / cfg.gap 均为画布宽度的比例。
+  // cfg.minEqWidth=true 时,静止最小高度 = 柱宽(圆头);否则用 cfg.minH(高度比例)。
+  function drawBars(cv,vals,cols,cfg){
+    const c=cv.getContext('2d'), W=cv.width, H=cv.height, n=vals.length;
+    c.clearRect(0,0,W,H);
+    const bw=cfg.barW*W, gap=cfg.gap*W;
+    const total=n*bw+(n-1)*gap, x0=(W-total)/2, cy=H*0.5;
+    const minH=cfg.minEqWidth?bw:cfg.minH*H, maxH=(cfg.maxH||0.84)*H;
+    const grad=c.createLinearGradient(0,H*0.1,0,H*0.9);
+    grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]);
+    c.fillStyle=grad;
+    for(let i=0;i<n;i++){
+      const h=Math.max(minH,vals[i]*maxH), x=x0+i*(bw+gap), y=cy-h/2;
+      c.beginPath();
+      if(c.roundRect) c.roundRect(x,y,bw,h,bw/2); else c.rect(x,y,bw,h);
+      c.fill();
+    }
+  }
+
+  let last=performance.now();
+  function frame(nowMs){
+    const now=nowMs/1000, dt=Math.min(0.05,(nowMs-last)/1000); last=nowMs;
+    const db=readSpectrum();
+    stepAndroid(dt); stepIOS(dt,db,now); stepHorizon(dt);
+    drawBars(aCv,aPos,A_COLORS,{barW:0.030,gap:0.050,minH:A_MIN_RATIO,maxH:0.82});
+    drawBars(iCv,iDisp,ARTWORKS[state.artwork].colors,{barW:0.085,gap:0.075,minEqWidth:true,maxH:0.9});
+    drawBars(hCv,hDisp,[H_COL_TOP,H_COL_MID,H_COL_BOT],{barW:0.048,gap:0.058,minEqWidth:true,maxH:0.8});
+    meterEl.textContent=(state.playing||state.mic)?((db===-Infinity?'−∞':db.toFixed(1).replace('-','−'))+' dB'+(iIdle?' · iOS静态':'')):'—';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------------- ui ----------------
+  const btnPlay=document.getElementById('btnPlay'), btnMic=document.getElementById('btnMic');
+  function sync(){btnPlay.textContent=state.playing?'暂停':'播放音乐';btnMic.textContent=state.mic?'停止麦克风':'用麦克风';}
+  btnPlay.addEventListener('click',()=>state.playing?stopMusic():startMusic());
+  btnMic.addEventListener('click',()=>state.mic?stopMic():startMic());
+
+  document.querySelectorAll('#factors input').forEach(inp=>{
+    inp.addEventListener('change',()=>{state.factors[inp.dataset.f]=inp.checked;inp.closest('.chip').classList.toggle('on',inp.checked);});
+  });
+
+  const arts=document.getElementById('arts');
+  // 岛内方形封面用整幅渐变;选择器圆点用柔和的浅→深单色渐变(参照 horizon-orb 的 .pal)
+  const coverCss=a=>`linear-gradient(140deg,${a.colors[0]},${a.colors[1]} 52%,${a.colors[2]})`;
+  const dotCss=a=>`radial-gradient(circle at 34% 28%, ${a.colors[0]}, ${a.colors[1]} 55%, ${a.colors[2]})`;
+  ARTWORKS.forEach((a,i)=>{
+    const b=document.createElement('button');
+    b.className='sw'+(i===0?' sel':''); b.title=a.name; b.setAttribute('aria-label','封面:'+a.name);
+    b.style.background=dotCss(a);
+    b.style.setProperty('--ring', a.colors[2]);
+    b.addEventListener('click',()=>{state.artwork=i;arts.querySelectorAll('.sw').forEach(s=>s.classList.remove('sel'));b.classList.add('sel');artEl.style.background=coverCss(a);});
+    arts.appendChild(b);
+  });
+  artEl.style.background=coverCss(ARTWORKS[0]);
+  sync();
+})();
+</script>
+</body>
+</html>
